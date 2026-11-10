@@ -1,0 +1,932 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Pocket Arcade</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one page, four views (home, Fivefold, Open Road, Deep Dive) switched by the URL hash.
+   Home is a scrolling list of game cards; each game fills the screen under a slim top bar. */
+:root {
+  --bg: #f3f5f7; --surface: #e4e8ed; --fg: #16202b; --muted: #5b6776; --line: #c3cad3;
+  --hit: #2c7a57; --near: #a8650f; --miss: #5d6877; --key: #d5dbe2; --accent: #2c7a57;
+  --road: #b34a2f; --sea: #1f6f99; --tile-text: #ffffff;
+  --font-display: "Archivo Black", "Arial Black", Impact, sans-serif;
+  --font-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171f; --surface: #1b2430; --fg: #e8edf3; --muted: #93a0b1; --line: #2e3a49;
+    --hit: #2f8f66; --near: #b9820f; --miss: #384352; --key: #2a3544; --accent: #4cc38a;
+    --road: #e0714f; --sea: #46a6d6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171f; --surface: #1b2430; --fg: #e8edf3; --muted: #93a0b1; --line: #2e3a49;
+  --hit: #2f8f66; --near: #b9820f; --miss: #384352; --key: #2a3544; --accent: #4cc38a;
+  --road: #e0714f; --sea: #46a6d6; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  padding-block: 10px 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow-x: hidden;
+}
+.view { height: 100%; width: 100%; max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 0; }
+.view[hidden] { display: none; }
+.bar {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border-bottom: 2px solid var(--line); padding-bottom: 8px; flex: none;
+}
+.bar h1 { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: .02em; margin: 0; }
+.bar h1 span { color: var(--accent); }
+.hbtns { display: flex; gap: 8px; align-items: center; }
+.pill {
+  font: 600 .78rem var(--font-body); letter-spacing: .06em; text-transform: uppercase;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 11px; cursor: pointer; text-decoration: none; display: inline-block;
+}
+.pill:hover { border-color: var(--accent); }
+.pill.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Home */
+#home { justify-content: flex-start; overflow-y: auto; gap: 18px; padding-bottom: 8px; }
+.hero { width: 100%; padding-top: 6px; }
+.hero h1 { font-family: var(--font-display); font-size: clamp(2rem, 9vw, 2.8rem); line-height: 1; margin: 0 0 8px; text-wrap: balance; }
+.hero p { margin: 0; color: var(--muted); font-size: .98rem; max-width: 40ch; }
+.cards { width: 100%; display: grid; gap: 14px; }
+.card {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: center;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 14px;
+  color: var(--fg); text-decoration: none;
+}
+.card:hover { border-color: var(--accent); }
+.card h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 4px; }
+.card p { margin: 0 0 8px; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+.card .stat { font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+.thumb { width: 112px; height: 84px; border-radius: 6px; overflow: hidden; position: relative; }
+.t-five { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; padding: 6px; align-content: center; background: var(--bg); }
+.t-five i { aspect-ratio: 1; border-radius: 3px; display: grid; place-items: center; font: normal 12px var(--font-display); color: #fff; }
+.t-five .h { background: var(--hit); } .t-five .n { background: var(--near); } .t-five .m { background: var(--miss); }
+.t-road { background: #2a2f38; }
+.t-road::before, .t-road::after { content: ""; position: absolute; top: 0; bottom: 0; width: 0; border-left: 3px dashed rgba(255,255,255,.55); }
+.t-road::before { left: 37%; } .t-road::after { left: 63%; }
+.t-road b { position: absolute; width: 15px; height: 27px; border-radius: 0; box-shadow: 0 0 0 3px rgba(0,0,0,.45); }
+.t-road { image-rendering: pixelated; }
+.t-dive { background: linear-gradient(#8fd3f0, #1f6f99 45%, #0b2a45); }
+.t-dive i { position: absolute; border-radius: 50%; background: rgba(255,255,255,.7); }
+.foot { color: var(--muted); font-size: .78rem; text-align: center; width: 100%; }
+
+/* Fivefold */
+#msg, #rtime, #dmsg { min-height: 1.5em; font-weight: 700; font-size: .95rem; text-align: center; }
+.fmain { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
+#board { display: grid; grid-template-rows: repeat(6, 1fr); gap: 6px; }
+.row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.tile {
+  width: min(13.5vw, 8.2vh, 62px); aspect-ratio: 1; display: grid; place-items: center;
+  border: 2px solid var(--line); border-radius: 4px; font: 1.7rem var(--font-display);
+  text-transform: uppercase; color: var(--fg); background: transparent; user-select: none;
+}
+.tile.filled { border-color: var(--muted); animation: pop .1s ease-out; }
+.tile.hit, .tile.near, .tile.miss { color: var(--tile-text); border-color: transparent; }
+.tile.hit { background: var(--hit); } .tile.near { background: var(--near); }
+.tile.miss {
+  background: var(--miss);
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255,255,255,.16) 6px 12px);
+  text-decoration: line-through; text-decoration-thickness: 3px;
+}
+.tile.flip { animation: flip .5s ease both; animation-delay: calc(var(--i) * 260ms); }
+.row.shake { animation: shake .45s; }
+.row.bounce .tile { animation: bounce .7s ease both; animation-delay: calc(var(--i) * 90ms); }
+@keyframes pop { 50% { transform: scale(1.08); } }
+@keyframes flip { 0% { transform: rotateX(0); } 50% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes bounce { 40% { transform: translateY(-14px); } 70% { transform: translateY(2px); } }
+#kb { width: 100%; display: flex; flex-direction: column; gap: 6px; flex: none; }
+.krow { display: flex; gap: 5px; justify-content: center; }
+.key {
+  flex: 1; min-width: 0; height: 52px; border: 0; border-radius: 5px; cursor: pointer;
+  background: var(--key); color: var(--fg); font: 700 .95rem var(--font-body); text-transform: uppercase; padding: 0;
+}
+.key.wide { flex: 1.5; font-size: .72rem; letter-spacing: .04em; }
+.key.hit { background: var(--hit); color: var(--tile-text); }
+.key.near { background: var(--near); color: var(--tile-text); }
+.key.miss { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); opacity: .45; text-decoration: line-through; text-decoration-thickness: 2px; }
+
+/* Open Road */
+#rwrap { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
+#rstage { position: relative; border-radius: 0; overflow: hidden; border: 3px solid var(--line); box-shadow: 4px 4px 0 rgba(0,0,0,.3); touch-action: none; user-select: none; -webkit-user-select: none; }
+#rcv { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+#rover h2, #rover .big { font-family: "Courier New", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .06em; }
+#rover p { font-family: "Courier New", ui-monospace, monospace; }
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; text-align: center; background: rgba(10, 14, 20, .72); color: #fff; padding: 16px;
+}
+.overlay h2 { font-family: var(--font-display); font-size: 1.5rem; margin: 0; }
+.overlay p { margin: 0; font-size: .9rem; opacity: .85; max-width: 26ch; }
+.overlay .big { font: 2.4rem var(--font-display); font-variant-numeric: tabular-nums; }
+.steer { display: flex; gap: 10px; width: 100%; flex: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+.steer button {
+  flex: 1; height: 54px; border: 0; border-radius: 0; box-shadow: 0 4px 0 rgba(0,0,0,.35); background: var(--key); color: var(--fg);
+  font: 700 1.4rem var(--font-body); cursor: pointer;
+}
+#rtime { font-family: var(--font-display); font-size: 1.1rem; font-variant-numeric: tabular-nums; flex: none; }
+#rtime small { font: 600 .74rem var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-left: 10px; }
+
+/* Deep Dive */
+#dive { justify-content: flex-start; overflow-y: auto; gap: 14px; }
+.dcard { width: 100%; background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.dcount { font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.dq { font-family: var(--font-display); font-size: 1.45rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+.dq em { font-style: normal; color: var(--sea); }
+.tbar { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+.tbar i { display: block; height: 100%; width: 100%; background: var(--sea); }
+.tbar i.low { background: var(--road); }
+.dform { display: flex; gap: 8px; }
+.dform input {
+  flex: 1; min-width: 0; font: 600 1.1rem var(--font-body); padding: 12px; border-radius: 6px;
+  border: 2px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.tiers { display: flex; flex-wrap: wrap; gap: 6px; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
+.tiers span { border: 1px solid var(--line); border-radius: 4px; padding: 3px 7px; }
+.gauge { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.gtrack { height: 22px; border-radius: 11px; background: linear-gradient(90deg, #8fd3f0, #1f6f99 55%, #0b2a45); position: relative; overflow: hidden; }
+.gmask { position: absolute; top: 0; right: 0; bottom: 0; background: var(--surface); opacity: .88; transition: width .8s ease; }
+.gdiver { position: absolute; top: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid #0b2a45; transform: translateX(-9px); transition: left .8s ease; }
+.glabel { display: flex; justify-content: space-between; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.glabel b { color: var(--fg); }
+.good { color: var(--hit); } .bad { color: var(--road); }
+.dres { text-align: center; display: flex; flex-direction: column; gap: 6px; }
+.dres .big { font: 2.4rem var(--font-display); font-variant-numeric: tabular-nums; }
+.dres p { margin: 0; color: var(--muted); font-size: .92rem; }
+
+dialog { background: var(--bg); color: var(--fg); border: 2px solid var(--line); border-radius: 10px; padding: 20px; width: min(92vw, 360px); }
+dialog::backdrop { background: rgba(8, 12, 18, .6); }
+dialog h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 12px; }
+dialog p { color: var(--muted); font-size: .9rem; line-height: 1.5; margin: 0 0 10px; }
+.answer { font-family: var(--font-display); font-size: 1.8rem; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 14px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; text-align: center; }
+.stats b { display: block; font: 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.stats small { color: var(--muted); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
+.dbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.legend { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; font-size: .88rem; }
+.legend .tile { width: 30px; font-size: 1rem; flex: none; }
+@media (max-width: 380px) { .card { grid-template-columns: 1fr; } .thumb { width: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .tile, .row, .row .tile { animation: none !important; }
+  .gmask, .gdiver { transition: none; }
+}
+</style>
+
+<!-- HOME -->
+<section id="home" class="view" hidden>
+  <div class="hero">
+    <h1>Pocket Arcade</h1>
+    <p>Three quick games, no limits. Pick one and play as many rounds as you like.</p>
+  </div>
+  <div class="cards">
+    <a class="card" href="#fivefold">
+      <div class="thumb t-five" aria-hidden="true">
+        <i class="m">S</i><i class="n">T</i><i class="m">O</i><i class="h">N</i><i class="h">E</i>
+        <i class="h">S</i><i class="h">T</i><i class="h">O</i><i class="h">N</i><i class="h">E</i>
+      </div>
+      <div><h2>Fivefold</h2><p>Guess the five-letter word in six tries. New word every round.</p><div class="stat" id="homeFive">Not played yet</div></div>
+    </a>
+    <a class="card" href="#road">
+      <div class="thumb t-road" aria-hidden="true">
+        <b style="left:14%;top:8px;background:#4f8fd6"></b><b style="left:70%;top:34px;background:#d6b04f"></b><b style="left:42%;top:56px;background:#e0714f"></b>
+      </div>
+      <div><h2>Open Road</h2><p>Drift through traffic, trucks, lane-changers and merging ramp cars. See how long you last.</p><div class="stat" id="homeRoad">No run yet</div></div>
+    </a>
+    <a class="card" href="#dive">
+      <div class="thumb t-dive" aria-hidden="true">
+        <i style="width:6px;height:6px;left:20%;top:14px"></i><i style="width:9px;height:9px;left:70%;top:34px"></i><i style="width:5px;height:5px;left:40%;top:58px"></i>
+      </div>
+      <div><h2>Deep Dive</h2><p>Seven prompts, 25 seconds each. The rarer your answer, the deeper you go.</p><div class="stat" id="homeDive">No dive yet</div></div>
+    </a>
+  </div>
+  <div class="foot">Scores are saved in this browser only.</div>
+</section>
+
+<!-- FIVEFOLD -->
+<section id="fivefold" class="view" hidden>
+  <header class="bar">
+    <a class="pill" href="#">← Games</a>
+    <h1>Five<span>fold</span></h1>
+    <div class="hbtns">
+      <button class="pill" id="helpBtn" aria-label="How to play">?</button>
+      <button class="pill" id="statsBtn">Stats</button>
+      <button class="pill primary" id="newBtn">New</button>
+    </div>
+  </header>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <div class="fmain"><div id="board" aria-label="Guess board"></div></div>
+  <div id="kb"></div>
+</section>
+
+<!-- OPEN ROAD -->
+<section id="road" class="view" hidden>
+  <header class="bar">
+    <a class="pill" href="#">← Games</a>
+    <h1>Open <span>Road</span></h1>
+    <div id="rtime">0.0s<small id="rbest"></small></div>
+  </header>
+  <div id="rwrap">
+    <div id="rstage">
+      <canvas id="rcv" aria-label="Driving game"></canvas>
+      <div class="overlay" id="rover"></div>
+    </div>
+  </div>
+  <div class="steer">
+    <button id="rleft" aria-label="Move left">◀</button>
+    <button id="rright" aria-label="Move right">▶</button>
+  </div>
+</section>
+
+<!-- DEEP DIVE -->
+<section id="dive" class="view" hidden>
+  <header class="bar">
+    <a class="pill" href="#">← Games</a>
+    <h1>Deep <span>Dive</span></h1>
+    <span id="dbest" class="dcount"></span>
+  </header>
+  <div class="dcard" id="dmain"></div>
+  <div class="gauge">
+    <div class="gtrack"><div class="gmask" id="gmask"></div><div class="gdiver" id="gdiver"></div></div>
+    <div class="glabel"><span>Surface</span><span><b id="gdepth">0 m</b> of 7,000 m</span></div>
+  </div>
+</section>
+
+<dialog id="endDlg">
+  <h2 id="endTitle"></h2>
+  <p id="endSub"></p>
+  <div class="answer" id="endWord"></div>
+  <div class="dbtns">
+    <button class="pill primary" id="againBtn">Play again</button>
+    <button class="pill" id="copyBtn">Copy result</button>
+    <button class="pill" id="endClose">Close</button>
+  </div>
+</dialog>
+<dialog id="statsDlg">
+  <h2>Your stats</h2>
+  <div class="stats">
+    <div><b id="sPlayed">0</b><small>Played</small></div>
+    <div><b id="sWin">0%</b><small>Win rate</small></div>
+    <div><b id="sStreak">0</b><small>Streak</small></div>
+    <div><b id="sBest">0</b><small>Best</small></div>
+  </div>
+  <div class="dbtns"><button class="pill" id="statsClose">Close</button></div>
+</dialog>
+<dialog id="helpDlg">
+  <h2>How to play</h2>
+  <p>Guess the five-letter word in six tries. Press Enter to submit. Hit New for a fresh word any time.</p>
+  <div class="legend"><div class="tile hit">W</div> Right letter, right spot</div>
+  <div class="legend"><div class="tile near">O</div> Right letter, wrong spot</div>
+  <div class="legend"><div class="tile miss">R</div> Letter is not in the word</div>
+  <div class="dbtns"><button class="pill" id="helpClose">Got it</button></div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+let current = 'home';
+
+/* ============ FIVEFOLD ============ */
+const Five = (() => {
+  const WORDS = `about above abuse actor acute admit adopt adult after again agent agree ahead alarm album alert alike alive allow alone along alter among angel anger angle angry ankle apart apple apply arena argue arise armor array arrow aside asset audio avoid awake award aware badly baker basic basin basis beach beard beast begin being below bench berry birth black blade blame blank blast blaze bleed blend bless blind block blood bloom board boast bonus boost booth bound brain brand brave bread break breed brick bride brief bring broad broke brown brush build bunch burst buyer cabin cable candy carry carve catch cause chain chair chalk charm chart chase cheap check cheek cheer chess chest chief child chill choir chose civil claim class clean clear clerk click cliff climb clock close cloth cloud coach coast color couch could count court cover crack craft crane crash crawl crazy cream crime crisp cross crowd crown crush curve cycle daily dance dealt death debut delay dense depth diary dirty doubt dozen draft drain drama drank dream dress dried drift drill drink drive drown eager early earth eight elbow elder elect elite empty enemy enjoy enter entry equal error essay event every exact exist extra faith false fancy fault feast fence fever fiber field fifth fifty fight final first flame flash fleet flesh float flood floor flour fluid flush focus force forge forth forty forum found frame frank fraud fresh front frost fruit fully funny ghost giant given glass globe glory glove grace grade grain grand grant grape graph grasp grass grave great green greet grief grill grind gross group grown guard guess guest guide habit happy harsh heart heavy hedge hello hence honey honor horse hotel house human humor hurry ideal image imply index inner input irony issue ivory jelly joint judge juice knife knock known label labor large laser later laugh layer learn lease least leave legal lemon level light limit linen liver lobby local lodge logic loose lover lower loyal lucky lunch magic major maker march match maybe mayor meant medal media mercy merge merit metal meter might minor minus mixed model moist money month moral motor mount mouse mouth movie music naive nerve never newly night noble noise north novel nurse ocean offer often olive onion opera orbit order other ought outer owner paint panel paper party pasta patch pause peace pearl phase phone photo piano piece pilot pitch pizza place plain plane plant plate plaza point polar porch pound power press price pride prime print prior prize proof proud prove pulse punch pupil queen query quest quick quiet quite quote radar radio raise rally ranch range rapid ratio reach react ready realm rebel refer relax reply reset rider ridge rifle right rigid risky river roast robot rocky rough round route royal rural salad sauce scale scare scene scope score scout sense serve seven shade shake shall shape share sharp sheep sheet shelf shell shift shine shirt shock shore short shout sight silly since sixth sixty skill skirt sleep slice slide slope small smart smell smile smoke snake solar solid solve sorry sound south space spare spark speak speed spell spend spice spike spill spine split spoke sport spray squad stack staff stage stair stake stamp stand stare start state steam steel steep steer stick stiff still stock stone stood store storm story stove straw strip stuck study stuff style sugar suite sunny super sweet swept swift swing sword table taste teach tease teeth thank theme there thick thing think third those three threw throw thumb tiger tight timer title toast today token tooth topic total touch tough towel tower toxic trace track trade trail train trait trash treat trend trial tribe trick troop truck truly trunk trust truth twice twist ultra uncle under union unite unity until upper upset urban usage usual valid value vapor vault verse video vigor vinyl viral virus visit vital vivid vocal voice waste watch water weary weave weigh weird whale wheat wheel where which while white whole whose widow width witch woman world worry worse worth would wound wrist write wrong yacht young youth zebra`
+    .split(/\s+/).filter((w, i, a) => w.length === 5 && a.indexOf(w) === i);
+  /* Offline dictionary of allowed guesses (no network needed). Answers above are always allowed too. */
+  const VALID = new Set(`aalii abaca aback abaft abamp abase abash abate abbes abbey abbot abeam abele abets abhor abide abies abler abmho abode abohm abort about above abuse abuts abuzz abysm abyss acari accel acerb ached aches achoo acids acing acini acmes acned acorn acred acres acrid acted actin actor acute adage adapt addax added adder addle adept adieu adios adits adman admen admin admit admix adobe adopt adore adorn adown adult adust adzes aecia aedes aegis aerie aeron affix afire afoot afore afoul afrit after again agama agape agate agave agent agger aggie aggro agile aging agios agist agita aglet agley aglow agone agony agora agree agric agron ahead aided aider aides ailed aimed aioli aired airts aisle aitch akees akene alack alarm alary alate album alder aldol aleph alert algae algal algid algin algor alias alibi alien align alike alkyd alkyl allay allee alley allot allow alloy allyl aloes aloft aloha aloin alone along aloof aloud alpha altar alter altos alula alums amahs amain amass amaze amber ambit amble ambos ambry amend ament amice amide amigo amine amino amiss amity amnio among amour ample amuse ancon anear anele anent angel anger angle angry angst anile anils anima anime anion anise ankhs ankle ankus annal annas annex annoy annul anoas anode anole anons anted antes antic antiq antis antre antsy anvil aorta apace apart apeak apery aphid aphis apian aping apish apnea aport appel apple apply apron apses apsis apter aquas araks arbor arced archt ardeb ardor areal areas areca arena arete argal argil argol argon argot argue arias ariel arils arise armed armet armor aroid aroma arose arras array arris arrow arsed arsis arson artel artsy arums ascot ascus asdic ashed ashes aside asked asker askew aspen asper aspic assai assay asses asset assoc aster astir atilt atlas atman atoll atoms atomy atone atony atria atrip attar attic audio audit auger aught augur aulic aulos aunts aural aurar auras auric aurum autos auxin avail avast avens avers avert avian avoid avoir avows await awake award aware awash awful awing awned awoke axial axils axing axiom axles axons ayahs ayins azide azine azoic azole azote azure baaed babas babel babes babul baccy backs bacon badge bagel baggy bahts bails bairn baits baiza baize baked baker bakes balas balds baldy baled baler bales balks balky balls bally balms balmy balsa banal bands bandy banes bangs banjo banks banns barbs barde bards bared barer bares barfs barge baric barit barks barms barmy barns baron barre barye basal based baser bases basic basil basin basis basks basso baste batch bated bates bathe baths batik baton batty bauds bawds bawdy bawls bayed bayou bazar beach beads beady beaks beams beamy beano beans beard bears beast beats beaus beaut bebop becks bedel bedew bedim beech beefs beefy beeps beers beery beets befit befog began begat beget begin begot begum begun beige being belay belch belga belie belle bells belly below belts bemas bench bends bendy benne benny bents beret bergs berks berms berry berth beryl beset besom besot bests betas betel beths betta bevel bevvy bezel bhaji bhang bialy bible bicep biddy bides bidet bield biers biffs bifid bight bigot bijou biked biker bikes bilbo bilge bilks bills billy bimah bimbo binal binds bines binge bingo biome biota biped bipod birch birds birls birrs birth bises bison bitch biter bites bitts bitty blabs black blade blags blahs blain blame bland blank blare blase blast blate blats blaze bleak blear bleat blebs bleed bleep blend bless blimp blind bling blini blink blips bliss blitz bloat blobs block blocs blogs bloke blond blood bloom bloop blots blown blows blowy blued bluer blues bluet bluey bluff blunt blurb blurs blurt blush board boars boart boast boats bobby boded bodes bodge boffo bogey boggy bogie bogle bogon bogus boils boink bolas boles bolls bolos bolts bolus bombe bombs bonce bonds boned boner bones bongo bongs bonks bonne bonny bonus bonze boobs booby booed books booms boong boons boors boost booth boots booty booze boozy borak borax bored borer bores boric borne boron bosky bosom boson bossy botch botel bothy bough boule bound bouse bouts bovid bowed bowel bower bowls bowse boxed boxer boxes boyar boyla bozos brace brach bract brads braes brags braid brail brain brake brand brant brash brass brats brave bravo brawl brawn braxy brays braze bread break bream brede breed brent breve brews bribe brick bride brief brier brigs brill brims brine bring brink briny brisk brits broad broch brock broil broke bronc brood brook broom brose broth brown brows bruin bruit brume brunt brush brute bubal bubba bucko bucks buddy budge bueno buffo buffs buggy bugle buhls build built bulbs bulge bulgy bulks bulky bulla bulls bully bumph bumps bumpy bunch bunco bungs bunks bunny bunts buoys buran burbs buret burgh burgs burin burka burke burls burly burns burnt burps burro burrs burry bursa burse burst busby bused buses bushy busks busts busty butch buteo butte butts butty butut butyl buxom buyer bwana bylaw byres bytes byway cabal cabby caber cabin cable cabob cacao cache cacti cadet cadge cadre cafes caffs caged cager cages cagey caird cairn caked cakes calks calla calls calms calve calyx camel cameo campo camps campy canal candy caned caner canes canna canny canoe canon canso canst canto cants canty caped caper capes capon capos caput carat carbs cards cared carer cares caret cargo carks carny carob carol carom carpi carps carry carse carte carts carve cased cases casks caste casts catch cater catty cauda caulk cauls cause caved caver caves cavie cavil cawed cease cecal cecum cedar ceded ceder cedes cedis ceiba celeb cella cello cells celom cense cento cents ceorl cered ceres ceria ceric ceros certs cesar cesta chads chafe chaff chain chair chalk champ chant chaos chape chaps chard chare charm charr chars chart chary chase chasm chats chaws cheap cheat check cheek cheep cheer chefs chela chemo chert chess chest chevy chews chewy chiao chick chico chide chief child chili chill chimb chime chimp china chine ching chink chino chins chips chirk chirm chirp chirr chits chive chivy chock chocs choir choke choli chomp chook chops chord chore chose chows chron chubs chuck chufa chuff chugs chump chums chunk churl churn churr chute chyle chyme ciaos cider cigar cilia cimex cinch circa cirri cisco cited cites civet civic civil clack clade claim clamp clams clang clank clans claps claro clary clash clasp class clave clavi claws clays clean clear cleat cleek clefs cleft clepe clerk clews click cliff climb clime cline cling clink clips clits cloak clock clods clogs clomb clomp clone clonk clops close cloth clots cloud clout clove clown cloys clubs cluck clued clues clump clung clunk clvii clxii clxiv clxix clxvi coach coact coals coaly coast coati coats cobia coble cobra cocci cocks cocky cocoa cocos codas coded coder codes codex codon coeds cogon cohos coifs coign coils coins coirs coked cokes colas colds coles coley colic colly colon color colts colza comas combe combo combs comdg comer comes comet comfy comic comma compo comps conch condo conga conic conns contd conte conto cooed cooee cooks cools coomb coons coops coots copal copay coped coper copes copra copse coral cords cored corer cores corgi coria corks corky corms corns cornu corny corps corse cosec coset costa coste costs cotes cotta couch cough could count coupe coups court couth coven cover coves covet covey covin cowed cower cowls coxae coxed coxes coyer coypu cozen craal crabs crack craft crags crake cramp crams crane crank crape craps crapy crash crass crate crave crawl craws crays craze crazy creak cream credo creed creek creel creep creme crepe crept cress crest crews cribs crick cried crier cries crime crimp crine crisp croak crock croft crone cronk crony crook croon crops crore cross croup crowd crown crows croze cruck crude cruel cruet cruft crumb crump cruse crush crust crwth crypt cryst cubby cubeb cubed cuber cubes cubic cubit cuddy cuffs cuing cukes culch culet culex culls cully culms culpa cults cumin cunts cupel cupid cuppa curbs curch curds curdy cured curer cures curet curia curie curio curls curly curry curse curve curvy cusec cushy cusks cusps cutch cuter cutey cutie cutin cutis cutty cutup cycad cycle cylix cymar cymas cymes cynic cysts cyton czars daces dacha dadas daddy daffy dagos dahls daily dairy daisy dales dally daman damar dames damns damps dance dandy dangs danio dared darer dares daric darky darns darts dated dater dates datum daube daubs daunt davit dawns dazed dazes dding deals dealt dears deary death debag debit debts debus debut decaf decal decay decks decor decoy dedal deems deeps deify deign deist deity dekko delay delft delis dells delta delve demit demon demur denar denim denom dense dents depth derby deriv derma derry desks deter detox deuce devil dewan dhobi dhole dhoti dhows dials diary diazo diced dicer dices dicey dicks dicot dicta didst diets diffs dight digit diked dikes dildo dills dilly dimer dimes dinar dined diner dines dinge dingo dingy dinky dints diode dippy dipso direr dirge dirks dirty disco dishy disks ditch ditsy ditto ditty divan divas dived diver dives divot divvy diwan dixie dizen dizzy dobby dobla dobra dobro docks dodge dodgy dodos doers doffs doges doggo doggy dogie dogma doily doing dolce doled doles dolls dolly dolor dolts domed domes donas donee donga dongs donna donne donor dooms doors doozy doped doper dopes dopey dorks dorky dorms dorty dosed doses doted doter dotes dotty doubt douce dough douma douse doves dowdy dowel dower dowie downs downy dowry dowse doyen dozed dozen dozer dozes drabs draff draft drags drain drake drama drams drank drape drawl drawn draws drays dread dream drear dregs dress dried drier dries drift drill drink drips drive droid droit droll drone drool droop drops dross drove drown drubs drugs druid drums drunk drupe druse dryad dryer duads duals ducal ducat duchy ducks ducky ducts duded dudes duels duets duffs dukes dulia dulls dully dulse dumbo dummy dumps dumpy dunce dunes dungs dunks dunno duomo duped duper dupes duple duppy durra durst durum dusky dusts dusty dutch duvet dwarf dweeb dwell dwelt dyads dyers dying dykes dynes eager eagle eagre eared earls early earns earth eased easel eases eaten eater eaves ebbed ebony echos eclat edema edged edger edges edict edify edits educe educt eerie effed egads egest egged egger egret eider eidos eight eikon eject eking eland elate elbow elder elect elegy elemi elfin elide elite elope elude elute elver elves email embay embed ember embow embus emcee emend emery emirs emits emmer emmet emoji emote empty enact enate ended endow endue enema enemy engin enjoy ennui ensue enter entry envoi envoy eosin epact epees ephah ephod ephor epics epoch epode epoxy equal equip equiv erase erect ergot ernes erode erose erred error eruct erugo erupt esker essay ester estop ether ethic ethos ethyl etnas etude etuis euros evade evens event evert every evict evils evite evoke ewers exact exalt exams excel exeat execs exert exile exine exist exits exons expat expel expos extol extra exude exult exurb eyras eyrir fable faced facer faces facet facts faddy faded fader fades fadge faena faffs fagot fails faint fairs fairy faith faked faker fakes fakir falls false famed fancy fango fangs fanny fanon faqir farad farce farci farcy fared farer fares farms farts fasts fatal fated fates fatso fatty fatwa faugh fault fauna fauns fauve faves favor favus fawns faxed faxes fayer fazed fazes fears feast feats fecal feces fecit feeds feels feeze feign feint felid fella fells felly felon felts femme femur fence fends fenny feoff feral feria fermi ferns ferny ferry fests fetal fetch feted fetes fetid fetor fetus feuar feuds fever fewer fiats fiber fiche fichu ficus fidge fiefs field fiend fiery fifer fifes fifth fifty fight filar filch filed filer files filet fills filly films filmy filth filum final finch finds fined finer fines finis finks finny fired firer fires firms firry first firth fiscs fishy fists fitch fitly fiver fives fixed fixer fixes fizzy fjeld fjord flack flags flail flair flake flaky flame flank flans flaps flare flash flask flats flaws flawy flays fleam fleas fleck fleer flees fleet flesh flews flick flied flier flies fling flint flips flirt flite flits float flock flocs floes flogs flong flood floor flops flora flory floss flour flout flown flows flubs flues fluff fluid fluke fluky flume flump flung flunk fluor flush flute fluty flyby flyte foals foams foamy focal focus foehn foggy foils foist folds folia folic folie folio folks folly fonts foods fools foots footy foray forby force fordo fords fores forge forgo forks forme forms forte forts forty forum fossa fosse fouls found fount fours fovea fowls foxed foxes foyer frack frags frail frame franc frank fraps frats fraud frays freak freed freer frees fremd frena fresh frets friar fried fries frigs frill frisk frith fritz frize frizz frock frogs frond frons front frore frosh frost froth frown froze fruit frump fryer fubsy fucks fucus fudge fuels fugal fuggy fugue fulls fully fumed fumes funds fungi fungo funks funky funny furan furls furor furry furze furzy fused fusee fuses fusil fussy fusty futon fuzzy gabby gable gadid gaffe gaffs gaily gains gaits galah galas galea gales galls galop gamba gamed gamer games gamic gamin gamma gammy gamps gamut ganef gangs ganja ganof gaped gapes gappy garbs gases gasps gassy gated gater gates gator gauds gaudy gauge gaunt gaurs gauss gauze gauzy gavel gawks gawky gawps gayer gazed gazer gazes geans gears gecko geeks geeky geese geest gelds gelid gemma gemmy gemot genes genet genic genie genii genip genit genoa genre genro gents genus geode geoid gerah germs germy gesso getup ghats ghazi ghees ghost ghoul ghyll giant gibed giber gibes giddy gifts gigot gigue gilds gills gilts gimel gimme gimps gimpy ginny gipon girds girls girly giros girth girts gites given giver gives gizmo glace glade glads glair gland glans glare glary glass glaze gleam glean glebe glede gleet glias glide glint glitz gloam gloat globe globs gloms gloom glory gloss glove glows gloze glued glues gluey glume gluon gluts glyph gnarl gnash gnats gnaws gnome goads goals goats godly goers gofer going golds golem golfs golly gonad goner gongs gonif gonks gonna gonzo goods goody gooey goofs goofy gooks goons goose goosy gopak goral gored gores gorge gorps gorse goths gotta gouge gourd gouty gowan gowns goyim grabs grace grade grads graft grail grain grams grand grans grant grape graph grasp grass grate grave gravy grays graze great grebe greed green greet greps gride grids grief grift grill grime grimy grind grins gripe grips grist grith grits groan groat groin groks groom grope gross grosz grots group grout grove growl grown grows grubs gruel grues gruff grume grump grunt guaco guano guans guard guars guava gucks guess guest guide guild guile guilt guise gulag gulas gulch gules gulfs gulls gully gulps gumbo gumma gummy gunge gungy gunky gunny guppy gurge gurus gushy gussy gusto gusts gusty gutsy gutta gutty guyed guyot gypsy gyral gyres gyron gyros gyrus gyved gyves habit hacek hacks hades hadst hafiz hafts haiku hails hairs hairy hajes hajji hakes hakim halal haled haler hales halls halms halon halos halts halve hamal hames hammy hamza hance hands handy hangs hanks haole happy hards hardy hared harem hares harks harms harps harpy harry harsh harts hasps haste hasty hatch hated hater hates haugh haulm hauls haunt haven haver haves havoc hawed hawks hawse hayed hazan hazed hazel hazer hazes hdqrs heads heady heals heaps heard hears heart heath heats heave heavy heder hedge heeds heels hefts hefty heirs heist helix hello hells helms helot helps helve hemal hemic hemin hence henge henna henry herbs herby herds heres heron hertz heths hewed hewer hexad hexed hexer hexes hexyl hicks hided hider hides highs hight hijab hiked hiker hikes hills hilly hilts hilum hinds hinge hinny hints hippo hippy hired hirer hires hitch hived hives hoard hoars hoary hobby hobos hocks hocus hoers hogan hoick hoist hoked hokes hokey hokku hokum holds holed holes holey holly homed homer homes homey homos honed honer hones honey honks honky honor hooch hoods hooey hoofs hooks hooky hoops hoots hoped hopes horah horal horas horde horme horns horny horol horse horst hosed hoses hosta hosts hotel hough hound houri hours house hovel hover howdy howls hubby huffs huffy huger hulas hulks hulky hulls human humic humid humor humph humps humpy humus hunch hunks hunky hunts hurds hurls hurry hurst hurts husks husky hussy hutch hydra hydro hyena hying hymen hymns hyoid hyped hyper hypes hypha hypos hyrax hyson iambi iambs ichor icier icily icing icons ictus ideal ideas idiom idiot idled idler idles idols idyll igloo ihram ileac ileal ileum ileus iliac ilium illus image imago imams imbue imide imine immix impel imper imply inane inbox inced incur incus indef index indic indie induc inept inert infer infin infra ingle ingot inion inkle inner innit instr intel inter intis intro inure inurn ioctl iodic ionic iotas irade irate irked irons irony irreg isles islet issei issue istle itchy items ivied ivies ivory ixtle izard jabot jacal jacks jaded jades jaggy jails jakes jalap jambs jammy japan japed japer japes jatos jaunt jawed jazzy jeans jebel jeeps jeers jello jells jelly jemmy jenny jerid jerks jerky jerry jests jetty jewel jibed jibes jiffs jiffy jihad jilts jimmy jingo jinks jinni jived jiver jives jivey jocko jocks joeys johns joins joint joist joked joker jokes jokey jolly jolts jolty jorum joule joust jowls jowly joyed judge jugal jugum juice juicy jujus julep jumbo jumps jumpy junco junks junta jupon jural jurat jurel juror jutty kafir kaiak kails kakis kalif kalis kalpa kanji kanzu kaons kaphs kapok kappa kaput karat karma karst karts kasha kauri kavas kayak kayos kazoo kebab kedge keels keens keeps kelly kenaf kendo kente kepis kerne ketch kevel keyed khaki khans kheda khoum kiang kibes kicks kicky kiddo kikes kills kilns kilos kilts kinas kinda kinds kines kings kinin kinks kinky kinos kiosk kited kites kitty kiwis klong kloof kluge klutz knack knaps knave knead kneed kneel knees knell knelt knife knish knits knobs knock knoll knots knout known knows knurl koala koans kobos kohls koine kolas kooks kooky kopje korma koses kotos kraal kraft krait kraut krill krona krone kroon kudos kudus kudzu kukri kulak kurus kvass kyats kyles kylix label labia labor laced lacer laces lacks laded laden lades ladle lagan lager laird lairs laity laker lakes lakhs lamas lambs lamed lamer lames lamia lamps lanai lance lands lanes lanky lapel lapin lapse larch lards lardy lares large largo larks larum larva lased laser lases lasso lasts latch lated later latex lathe lathi laths lathy latke latte lauds laugh lavas laved laver laves lawns laxer layer layup lazar lazed lazes leach leads leafs leafy leaks leaky leans leaps leapt learn lease leash least leave ledge leech leeks leers leery lefts lefty legal leges leggy legit leman lemma lemme lemon lemur lends lenis lento leone leper lepta lethe letup levee level lever levin lewis lexer lexis liana liard liars libel liber libra licit licks lidos liege lifer lifts ligan liger light liked liken liker likes lilac lilos lilts limbo limbs limed limen limes limey limit limns limos limps lindy lined linen liner lines lingo linin links lints linty lions lipid lippy lisle lisps lists litas liter lithe litho lived liven liver lives livid livre llama llano loach loads loafs loams loamy loans loath lobar lobby lobed lobes local locks locos locum locus loden lodes lodge loess lofts lofty logan loges loggy logia logic login logon logos loins lolls lolly loner longe longs looby looks looms loons loony loops loopy loose loots loped loper lopes loppy loran lords loris lorry losel loser loses lotas lotic lotto lotus lough louis loupe lours louse lousy louts loved lover loves lovey lowed lower lowly loyal luaus lubed lubes lubra lucid lucks lucky lucre ludic luffa luffs luged luges lulls lulus lumen lumps lumpy lunar lunch lunge lungi lungs lupus lurch lured lures lurex lurgy lurid lurks lushy lusts lusty lutes luxes lweis lxvii lying lymph lynch lyres lyric lyses lysin lysis lyssa lytic lytta macaw maced maces macho macle macro madam mafia mages magic magma magus maids mails maims mains maize major maker makes makos malar males malls malts malty mamas mamba mambo mamey mamma mammy manas manat maned manes manga mange mango mangy mania manic manky manly manna manor manse manta manuf maple maras march marcs mares marge maria marka marks marls marry marsh marts maser masks mason massy masts match mated mater mates matey matin matte matzo mauls maund mauve maven mavis maxed maxes maxim maxis maybe mayor mayst mazer mazes meals mealy means meant meany meats meaty mecca medal media medic meets meiny melds melee melic melon melts memes memos mends menus meows mercy meres merge merit merle merry mesas mesic mesne meson messy metal meted meter metes meths metic metis metro mewed mewls mezzo micks micro middy midge midis midst miffs miffy might miked mikes mikva milch miler miles milfs milia milit milks milky mills milos milts mimed mimer mimes mimic mince minds mined miner mines mingy minim minis minke minks minor mints minty minus mired mires mirin mirth mirza misdo miser missy mists misty miter mites mitis mitts mixed mixer mixes mneme moans moats mocha mocks modal model modem modes moggy mogul mohur moils moire moist mokes molal molar molas molds moldy moles molls molly molts mommy monad monas monde money mongo monks monte month mooch moods moody mooed moons moony moors moose moots moped moper mopes mopey moral moray morel mores morns moron morph morse mosey mossy motel motes motet moths mothy motif motor motte motto moues mound mount mourn mouse mousy mouth moved mover moves movie mowed mower moxie mucin mucks mucky mucor mucro mucus muddy mudra muffs mufti muggy mujik mulch mulct mules muley mulla mulls multi mummy mumps munch mungs muons mural murex murks murky murre mused muser muses mushy music musky mussy musts musty muted muter mutes mutts muzak muzzy myall mycol mynas myrrh myths naans nabob nacho nacre nadir naevi naiad naifs nails naira naive naked naker nakfa named namer names nance nancy nanny napes nappe nappy narcs nards nares naris narky nasal nasty natal natch nates natty naval navar navel naves navig navvy nawab neaps nears neath necks needs needy negro negus neigh nelly neper neral nerds nerdy nerve nervy nests netty neume never nevus newel newer newsy newts nexus ngwee nicer niche nicks nidus niece niffy nifty nigga night nihil nimbi nimby nines ninja ninny ninon ninth nipas nippy nisei nisus niter nitid nitro nitty nival nixed nixes nobby noble nocks nodal noddy nodes nodus noels nohow noise noisy nomad nonce nones nonet nooks nooky noons noose noria norms north nosed noses notch noted notes notum nouns novae novas novel noway nubby nuder nudes nudge nuked nukes nulls numbs numen numis nurse nutty nyala nylon nymph oakum oared oases oasis oasts oaths obeah obeli obese obeys obits objet oboes oboli occas occur ocean ocher ocker ocrea octad octal octan octet oculi odder odeon odeum odium odors offal offed offer often ogeed ogham ogive ogled ogler ogles ogres ohmic oiled oiler oinks okapi okays okras older oldie oleic olein oleum olive ollas ology omasa omber omega omits onion onset ontic oohed oomph ootid oozed oozes opahs opals opens opera opine oping opium opted optic orals orang orate orbit orcas order oread organ oriel orlop ornis orris osier osmic other ottar otter ought ounce ouphe ousel ousts outdo outed outer outgo outre outta ouzel ouzos ovals ovary ovate ovens overs overt ovine ovoid ovolo ovule owing owlet owned owner oxbow oxide oxime ozone paced pacer paces pacey pacha packs pacts paddy padre paean paeon pagan paged pager pages pails pains paint pairs paisa paled paleo paler pales palls palms palmy palsy pampa panda paned panel panes panga pangs panic panne pansy panto pants papal papas paper pappy paras parch pared parer pares pareu parka parks parky parol parrs parry parse parts party parve pasha pashm passe pasta paste pasts pasty patch pates paths patin patio patsy patty pause pavan paved paves pavid pavis pawed pawls pawns paxes payed payee payer peace peach peags peaks peaky peals peans pearl pears peart peaty pebas pecan pecks pedal peeks peels peens peeps peers peeve pekan pekes pekoe pelts penal pence pends penis penna penne penni penny peons peony peppy perch perdu peril peris perks perky perms perry perse pervs pesky pesos pesto pests pesty petal peter petit petty pewee pewit phage phase pheon phial phish phlox phone phons phony photo phots phyla phyle piano picks picky picot picul piece piers pieta piety piggy piing pikas piked piker pikes pilaf pilch piled pilei piles pills pilot pimps pinch pined pines piney pinko pinks pinna pinny pinon pinta pinto pints pinup pious piped piper pipes pipit pique pirog piste pitas pitch piths pithy piton pitta pivot pixel pixie pizza place plage plaid plain plait plane plank plans plant plash plasm plate plats platy playa plays plaza plead pleas pleat plebe plebs plena plica plied plier plies ploce plods plonk plops plots plows ploys pluck plugs plumb plume plump plums plumy plunk plush poach pocks pocky poddy poems poesy poets pogey pogge poilu point poise poked poker pokes pokey polar poled poler poles polio polis polit polka polls polyp polys pomes pommy ponce poncy ponds pones pongs pooch poods pooed poofs poohs pooka pools poons poops popes poppa poppy popup porch pored porer pores porgy porky porno ports posed poser poses posit posse posts potto potty pouch poufs poult pound pours pouts pouty power poxes prams prana prang prank prase prate prats prawn prays preen preps presa press prexy preys price prick pride pried prier pries prigs prime primo primp prink print prion prior prism privy prize probe prods proem profs prole promo prong proof propr props prose prosy proud prove prowl prows proxy prude prune psalm pseud pshaw psoas psych pubes pubic pubis pucka pucks pudgy puffs puffy puked pukes pukka pulas puled puler pules pulls pulps pulpy pulse pumas pumps punch pungs pungy punks punts pupae pupal pupil puppy puree purer purge purls purrs purse pursy pushy pussy putto putts putty pwned pygmy pylon pyoid pyres pyxes pyxie pzazz qibla qophs quack quads quaff quail quake quaky quale qualm quant quark quart quash quasi quass quays quean queen queer quell quern query quest queue quick quids quiet quiff quill quilt quine quins quint quips quipu quire quirk quirt quite quits quoin quoit quota quote rabbi rabid raced racer races racks racon radar radii radio radix radon rafts ragas raged rages ragga ragis raids rails rains rainy raise rajah rajes raked raker rakes rales rally ramie ramps rance ranch randy ranee range rangy ranks rants raped raper rapes rapid rared rarer rares rasps raspy ratal ratan rated ratel rater rates rathe ratio ratty raved ravel raven raver raves ravin rawer rayon razed razee razes razor reach react ready realm reals reams reaps rears reata reave rebec rebel rebid recap recce recon recti recto recur recut redan redye reedy reefs reeks reeky reels reest reeve refer refix refry regal regex rehab reify reign reive relax relay relic remex remit remix renal rends renew renin rents reorg repel repps repro resat resin resow rests retch retro revel revet revue rheas rheum rhino rhomb rhumb rhyme rials riant riata riced ricer rices ricks rider rides ridge ridgy riels rifer riffs rifle rifts right rigid rigor riled riles rille rills rimed rimes rinds rinks rinse riots ripen riper risen riser rises rishi risks risky rites ritzy rival rived river rives rivet riyal roach roads roams roans roars roast robed robes robin roble robot rocks rocky rodeo roger rogue roils roily roles rolls roman romeo romps ronde rondo roods roofs rooks rooky rooms roomy roose roost roots roped roper ropes roque roses rosin rotas rotls rotor roues rouge rough round rouse roust route routs roved rover roves rowan rowdy rowed rowel rower royal rubel rubes ruble ruche rucks rudds ruddy ruder ruffs rugby ruing ruins ruled ruler rules rumal rumba rummy rumor rumps runes rungs runic runny runts runty rupee rural ruses rushy rusks rusts rusty ruths rutty saber sabin sable sabot sabra sacks sacra sades sadhu safer safes sagas sager sages saggy sahib saiga sails saint saith saker sakes salad salep sales sally salmi salol salon salpa salsa salts salty salve salvo samba sambo sames samey sands sandy saner sapid sapor sappy saran sards sarge saris sarky saros sasin sassy satay sated satem sates satin satyr sauce saucy sauna saury saute saved saver saves savor savoy savvy sawed sawer saxes sayer scabs scads scags scald scale scalp scaly scamp scams scans scant scape scare scarf scarp scars scary scats scend scene scent schmo schwa scion scoff scold scone scoop scoot scope score scorn scour scout scowl scows scrag scram scrap scree screw scrim scrip scrod scrog scrub scrum scuba scudo scuds scuff scull sculp scums scups scurf scuta scute scuts seals seams seamy sears seats sebum secco sects sedan sedge sedgy sedum seeds seedy seeks seels seems seeps seers segno segue seine seise seism seize selah sells semen semis sends senna senor sense sente sepal sepia sepoy septa septs serai serer serfs serge serif serin serow serum serve servo setae setts setup seven sever sewan sewed sewer sexed sexes sexts shack shade shads shady shaft shags shahs shake shako shaky shale shall shalt shame shams shank shape shard share shark sharp shave shawl shawm shays sheaf shear sheds sheen sheep sheer sheet shelf shell shend shewn shews shied shier shies shift shill shims shine shins shiny ships shire shirk shirr shirt shits shiva shivs shoal shoat shock shoes shone shook shool shoos shoot shops shore short shote shots shout shove shown shows showy shred shrew shrub shrug shuck shuns shunt shush shuts shyer sibyl sicko sicks sided sides sidle siege sieve sifts sighs sight sigil sigma signs sikas silds silks silky sills silly silos silts silty silva simar simba since sines sinew singe sings sinks sinus sired siren sires sisal sises sissy sitar sited sites situs sixes sixth sixty sizar sized sizer sizes skald skate skean skeet skegs skein skelp skeps skews skids skied skier skies skiff skill skimp skims skink skins skint skips skirl skirr skirt skite skits skive skoal skosh skuas skulk skull skunk slabs slack slags slain slake slams slang slant slaps slash slate slats slaty slave slays sleds sleek sleep sleet slept slews slice slick slide slier slime slims slimy sling slink slips slits slobs sloes slogs sloop slope slops slosh sloth slots slows slubs slued slues sluff slugs slump slums slung slunk slurp slurs slush sluts slype smack small smalt smarm smart smash smaze smear smell smelt smews smile smirk smite smith smock smogs smoke smoko smoky smolt smote smurf smuts snack snafu snags snail snake snaky snaps snare snarf snark snarl snath sneak sneck sneer snick snide sniff snipe snips snits snobs snogs snood snook snoop snoot snore snort snots snout snows snowy snubs snuff snugs soaks soaps soapy soars soave sober socks socle sodas sofar sofas softa softy soggy soils solan solar soldo soled soles solid solon solos solus solve somas sonar sonde sones songs sonic sonny sooth sooty sopor soppy sorbs sorer sores sorgo sorry sorta sorts sorus sough souks souls sound soups soupy sours souse south sowed sower space spade spahi spake spall spams spang spank spans spare spark spars spasm spate spats spawn spays speak spear speck specs speed spell spend spent speos sperm spews spica spice spics spicy spied spiel spier spies spiff spike spiky spile spill spine spins spiny spire spiry spite spits spitz spivs splat splay split spoil spoke spoof spook spool spoon spoor spore sport spots spout sprag sprat spray spree sprig sprit sprog sprue spuds spued spues spume spumy spunk spurn spurs spurt sputa squab squad squat squaw squib squid sruti stabs stacc stack staff stage stags stagy staid stain stair stake stale stalk stall stamp stand stane stang stank staph stare stark stars start stash state stats stave stays stdio stead steak steal steam steed steel steep steer stein stela stele stems steno stent steps stere stern stets stews stich stick sties stiff stile still stilt sting stink stint stipe stirk stirs stoat stock stoic stoke stole stoma stomp stone stony stood stook stool stoop stope stops store stork storm story stoss stoup stout stove stows strap straw stray strep strew stria strip strop strow stroy strum strut stubs stuck studs study stuff stull stump stung stunk stuns stunt stupa stupe style styli suave sucks sucre sudor sudsy suede suety sugar suing suint suite suits sulci sulfa sulks sulky sully sumac summa sumps sunny sunup super suppl supra surah sural suras surds surer surfs surge surgy surly surra sushi sutra swabs swage swags swain swale swami swamp swank swans swaps sward swarm swart swash swath swats sways swear sweat swede sweep sweet swell swept swift swigs swill swims swine swing swink swipe swirl swish swizz swoon swoop sword swore sworn swots swung sycee sylph syncs synod synop syrup sysop tabby tabes tabla table taboo tabor tacet tache tacit tacks tacky tacos taffy tafia taiga tails taint takas taken taker takes takin talas taler tales talks talky tally talon taluk talus tamed tamer tames tamis tammy tamps tango tangs tangy tanka tanks tansy tanto tapas taped taper tapes tapir tapis tardy tared tares targe tarns taros tarot tarps tarry tarsi tarts tarty taser tasks tasse taste tasty tater tatty taunt taupe tawny taxed taxer taxes taxis taxon tayra tazza teach teaks teals teams tears teary tease teats techs techy teddy teems teens teeny teleg telex telic tells telly tempo temps tempt tench tends tenet tenge tenia tenne tenno tenon tenor tense tenth tents tepee tepid terce terms terns terra terry terse tesla testa tests testy teths tetra texts thane thank thaws thebe theca thees theft thegn their theme theol there therm these theta thews thewy thick thief thigh thill thine thing think thins thiol third thole thong thorn thorp those thous three threw throb throe throw thrum thuds thugs thuja thumb thump thunk thuya thyme tiara tibia tical ticks tidal tided tides tiers tiffs tiger tight tigon tilde tiled tiler tiles tills tilts timed timer times timid tinct tinea tined tines tinge tinny tints tipsy tired tires titan titch titer tithe titis title titty tizzy toads toady toast today toddy toeas toffs togas toile toils tokay toked token tokes tolan tolar tolls tolly tolus tolyl tombs tomes tonal toned toner tones tonga tongs tonic tonne tonus tools tooth toots topaz toped topee toper topes topic topog toque torch torii torrs torse torsk torso torte torts torus total toted totem toter totes touch tough tours touts towed towel tower towns toxic toxin toyed trace track tract trade trail train trait tramp trams trans traps trash trass trave trawl trays tread treas treat treed treen trees treks trend tress trews treys triad trial tribe trice trick tried trier tries trike trill trims trine trios tripe trips trite troat troll tromp trona trons troop trope troth trots trout trove trows troys truce truck trued truer trues trugs trull truly trump trunk truss trust truth tryma tryst tubal tubas tubby tubed tuber tubes tucks tufts tufty tulip tulle tumid tummy tumor tunas tuned tuner tunes tunic tunny tuple tuque turbo turds turfs turfy turns turps tushy tusks tutor tutti tutty tutus tuxes twain twang twats tweak tweed tween tweet twerk twerp twice twigs twill twine twink twins twirl twist twits twixt tying tykes typal typed types typos tyros udder uhlan ukase ulcer ulema ulnae ulnar ultra umbel umber umbra umiak umped unapt unary unbid unbox uncap uncle uncut undue unfed unfit unify union unite unity unjam unlay unlit unmet unpeg unpen unpin unrig unsay unset until unwed unwon upend upped upper upset urban uredo urged urger urges urial urine usage users usher using usual usurp usury uteri utile utter uveas uvula vagal vague vagus vales valet valid valor valse value valve vamps vampy vanda vanes vaped vapes vapid vapor varas varia varix varus varve vases vasts vasty vatic vault vaunt vedic veeps veers veery vegan veges veils veins veiny velar velds velum venae venal vends venge venin venom vents venue verbs verge versa verse verso verst vertu verve vesta vests vetch veter vexed vexes vials viand vibes vicar viced vices video views viewy vigil vigor viler villa villi vines vinic vinyl viola viols viper viral vireo virga virtu virus visas vised vises visit visor vista vitae vital vitta vivas vivid vixen vocab vocal vodka vogue voice voids voila voile volar voles volts volva vomer vomit voted voter votes vouch vouge vowed vowel vower vulva vying wacke wacko wacks wacky waded wader wades wadge wadis wafer wafts waged wager wages wagon wahoo waifs wails wains waist waits waive waked waken wakes waldo waled wales walks walls wally waltz wands waned wanes wanks wanna wants wards wares warez warms warns warps warts warty washy wasps waste watch water watts waved waver waves waxed waxes wazoo weald weals weans wears weary weave webby weber wedge weeds weedy weeks weens weeny weeps weepy weest wefts weigh weird weirs wekas welds wells welly welsh welts wench wends wersh whack whale whams whaps wharf whats wheal wheat wheel wheen whelk whelm whelp whens where whets which whiff while whims whine whins whiny whips whipt whirl whirs whish whisk whist white whits whity whole whomp whoop whops whore whorl whose whoso whsle whups wicks widen wider wides widow width wield wight wikis wilds wiled wiles wills willy wilts wimps wimpy wince winch winds windy wined wines winks winos winze wiped wiper wipes wired wirer wires wirra wised wiser wises wisps wispy witch withe withy witty wived wives wizen woald wodge wolds wolfs woman wombs women wonks wonky woods woody wooed wooer woofs wools woops woozy words wordy works world worms wormy worry worse worst worth would wound woven wowed wrack wraps wrath wreak wreck wrens wrest wring wrist write writs wrong wrote wroth wrung wryer wurst wussy xcvii xebec xenia xenon xeric xerox xrefs xterm xviii xxiii xxvii xxxii xxxiv xxxix xxxvi xylem xylol yacht yahoo yakka yanks yapok yapon yappy yards yarns yawed yawls yawns yawps yeahs yeans yearn years yeast yeggs yells yelps yenta yeses yetis yield yikes yobbo yodel yodle yogic yogis yoked yokel yokes yolks yonks young yours youth yowls yucca yucky yukky yulan yummy yurts zaire zamia zappy zarfs zayin zazen zebec zebra zebus zeros zests zesty zetas zibet zilch zincs zines zingy zippy zitis zloty zonal zoned zones zooid zooms zorch zoril`.split(' '));
+  WORDS.forEach(w => VALID.add(w));
+  const ROWS = 6, COLS = 5, KEYS = ['qwertyuiop', 'asdfghjkl', '+zxcvbnm-'];
+  const board = $('board'), kb = $('kb'), msg = $('msg');
+  let answer, row, col, grid, over, busy, keyState, history, started = false;
+
+  const loadStats = () => Object.assign({ played: 0, wins: 0, streak: 0, best: 0 }, store.get('fivefold-stats', {}));
+  function showStats() {
+    const s = loadStats();
+    $('sPlayed').textContent = s.played;
+    $('sWin').textContent = s.played ? Math.round(100 * s.wins / s.played) + '%' : '0%';
+    $('sStreak').textContent = s.streak; $('sBest').textContent = s.best;
+  }
+  function build() {
+    board.innerHTML = '';
+    for (let r = 0; r < ROWS; r++) {
+      const el = document.createElement('div'); el.className = 'row';
+      for (let c = 0; c < COLS; c++) { const t = document.createElement('div'); t.className = 'tile'; t.style.setProperty('--i', c); el.appendChild(t); }
+      board.appendChild(el);
+    }
+    kb.innerHTML = '';
+    KEYS.forEach(line => {
+      const kr = document.createElement('div'); kr.className = 'krow';
+      [...line].forEach(ch => {
+        const b = document.createElement('button'); b.className = 'key';
+        if (ch === '+' || ch === '-') {
+          b.classList.add('wide'); b.dataset.k = ch === '+' ? 'Enter' : 'Backspace';
+          b.textContent = ch === '+' ? 'Enter' : '⌫'; b.setAttribute('aria-label', b.dataset.k);
+        } else { b.dataset.k = ch; b.textContent = ch; }
+        kr.appendChild(b);
+      });
+      kb.appendChild(kr);
+    });
+  }
+  function newGame() {
+    let next; do { next = WORDS[Math.floor(Math.random() * WORDS.length)]; } while (next === answer);
+    answer = next; row = 0; col = 0; over = false; busy = false;
+    grid = Array.from({ length: ROWS }, () => Array(COLS).fill(''));
+    keyState = {}; history = []; msg.textContent = ''; build();
+  }
+  const tileAt = (r, c) => board.children[r].children[c];
+  function press(k) {
+    if (over || busy) return;
+    if (k === 'Enter') return submit();
+    if (k === 'Backspace') {
+      msg.textContent = '';
+      if (col > 0) { col--; grid[row][col] = ''; const t = tileAt(row, col); t.textContent = ''; t.classList.remove('filled'); }
+      return;
+    }
+    if (/^[a-z]$/.test(k) && col < COLS) { msg.textContent = ''; grid[row][col] = k; const t = tileAt(row, col); t.textContent = k; t.classList.add('filled'); col++; }
+  }
+  function score(guess) {
+    const res = Array(COLS).fill('miss'), left = {};
+    for (let i = 0; i < COLS; i++) { if (guess[i] === answer[i]) res[i] = 'hit'; else left[answer[i]] = (left[answer[i]] || 0) + 1; }
+    for (let i = 0; i < COLS; i++) { if (res[i] === 'hit') continue; if (left[guess[i]] > 0) { res[i] = 'near'; left[guess[i]]--; } }
+    return res;
+  }
+  function submit() {
+    if (col < COLS) {
+      const el = board.children[row]; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+      msg.textContent = 'Need five letters'; return;
+    }
+    const guess = grid[row].join('');
+    if (!VALID.has(guess)) {
+      const el = board.children[row]; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+      msg.textContent = 'Not in word list'; return;
+    }
+    const res = score(guess), r = row;
+    history.push(res); busy = true; msg.textContent = '';
+    const rank = { miss: 1, near: 2, hit: 3 };
+    res.forEach((s, i) => {
+      const t = tileAt(r, i); t.classList.add('flip');
+      setTimeout(() => t.classList.add(s), i * 260 + 250);
+      const prev = keyState[guess[i]]; if (!prev || rank[s] > rank[prev]) keyState[guess[i]] = s;
+    });
+    setTimeout(() => {
+      for (const k in keyState) {
+        const b = kb.querySelector('[data-k="' + k + '"]');
+        if (b) { b.classList.remove('hit', 'near', 'miss'); b.classList.add(keyState[k]); }
+      }
+      busy = false;
+      if (guess === answer) return finish(true, r);
+      row++; col = 0; if (row === ROWS) finish(false, r);
+    }, 4 * 260 + 600);
+  }
+  function finish(won, r) {
+    over = true;
+    const s = loadStats(); s.played++;
+    if (won) { s.wins++; s.streak++; s.best = Math.max(s.best, s.streak); } else s.streak = 0;
+    store.set('fivefold-stats', s);
+    if (won) { board.children[r].classList.add('bounce'); msg.textContent = ['Genius!', 'Superb!', 'Great!', 'Nice!', 'Solid.', 'Phew!'][r]; }
+    else msg.textContent = 'The word was ' + answer.toUpperCase();
+    $('endTitle').textContent = won ? 'Solved in ' + (r + 1) + (r ? ' guesses' : ' guess') : 'Out of guesses';
+    $('endSub').textContent = won ? 'Streak: ' + s.streak + ' · Best: ' + s.best : 'The word was:';
+    $('endWord').textContent = answer; $('copyBtn').textContent = 'Copy result';
+    setTimeout(() => { if (current === 'fivefold') $('endDlg').showModal(); }, won ? 1100 : 500);
+  }
+  function shareText() {
+    const sq = { hit: '🟩', near: '🟨', miss: '⬛' };
+    const won = history.length && history[history.length - 1].every(x => x === 'hit');
+    return 'Fivefold ' + (won ? history.length : 'X') + '/' + ROWS + '\n' + history.map(h => h.map(x => sq[x]).join('')).join('\n');
+  }
+  kb.addEventListener('click', e => { const b = e.target.closest('.key'); if (b) press(b.dataset.k); });
+  $('newBtn').onclick = () => { newGame(); $('newBtn').blur(); };
+  $('againBtn').onclick = () => { $('endDlg').close(); newGame(); };
+  $('endClose').onclick = () => $('endDlg').close();
+  $('statsBtn').onclick = () => { showStats(); $('statsDlg').showModal(); };
+  $('statsClose').onclick = () => $('statsDlg').close();
+  $('helpBtn').onclick = () => $('helpDlg').showModal();
+  $('helpClose').onclick = () => $('helpDlg').close();
+  $('copyBtn').onclick = async () => {
+    try { await navigator.clipboard.writeText(shareText()); $('copyBtn').textContent = 'Copied'; }
+    catch (e) { $('endSub').textContent = shareText().replace(/\n/g, ' '); }
+  };
+  return {
+    enter() { if (!started) { started = true; newGame(); } },
+    key(e) {
+      const k = e.key;
+      if (k === 'Enter' || k === 'Backspace') { if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur(); press(k); e.preventDefault(); }
+      else if (/^[a-zA-Z]$/.test(k)) press(k.toLowerCase());
+    },
+    summary() { const s = loadStats(); return s.played ? 'Streak ' + s.streak + ' · Best ' + s.best : 'Not played yet'; }
+  };
+})();
+
+/* ============ OPEN ROAD ============ */
+const Road = (() => {
+  const W = 360, H = 560, LW = 84, ROADX = 54, ROADW = LW * 3, PY = H - 130, PW = 44, PH = 76, RAMP_L = 340;
+  const cv = $('rcv'), ctx = cv.getContext('2d'), stage = $('rstage'), over = $('rover');
+  const COLORS = ['#4f8fd6', '#d6b04f', '#8a63c9', '#3fa57a', '#c9c9d1', '#d65f8a'];
+  const TRAILERS = ['#e6e8ec', '#c9d3dd', '#d9c7a3', '#b8c6b0'];
+  const BANNERS = [[12, 'Trucks on the road'], [22, 'Cars change lanes. Watch the blinkers'], [34, 'On-ramps ahead. Cars merge in'], [60, 'Rush hour']];
+  const G = 3;   /* size of one 'pixel' in game units */
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const smooth = p => p * p * (3 - 2 * p);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const laneX = l => ROADX + LW * l + LW / 2;
+  const laneOf = x => clamp(Math.round((x - ROADX - LW / 2) / LW), 0, 2);
+  let state = 'ready', px = laneX(1), vx = 0, ang = 0, cars = [], ramps = [], marks = [], t = 0, speed = 230, offset = 0, dist = 0;
+  let spawnDist = 200, rampCd = 0, banner = null, shown = {}, raf = 0, last = 0, tdown = false;
+  const bn = document.createElement('div');
+  bn.style.cssText = 'position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:92%;padding:6px 10px;background:#0b0e12;color:#fff;border:3px solid #e8e8e8;font:700 12px "Courier New",ui-monospace,monospace;text-transform:uppercase;letter-spacing:.04em;text-align:center;pointer-events:none;opacity:0;box-shadow:4px 4px 0 rgba(0,0,0,.45);z-index:2';
+  stage.appendChild(bn);
+  let best = store.get('road-best', 0);
+  const keys = { l: 0, r: 0 }, held = { l: 0, r: 0 };
+  let touch = 0;
+
+  function fit() {
+    const box = $('rwrap'), s = Math.min(box.clientWidth / W, box.clientHeight / H);
+    if (!(s > 0)) return;
+    stage.style.width = Math.floor(W * s) + 'px'; stage.style.height = Math.floor(H * s) + 'px';
+    cv.width = Math.ceil(W / G); cv.height = Math.ceil(H / G);   /* tiny canvas: one pixel = G game units */
+    ctx.setTransform(1 / G, 0, 0, 1 / G, 0, 0); ctx.imageSmoothingEnabled = false;
+    draw();
+  }
+  function reset() {
+    px = laneX(1); vx = 0; ang = 0; cars = []; ramps = []; marks = []; t = 0; speed = 230; offset = 0; dist = 0;
+    spawnDist = 200; rampCd = 0; banner = null; shown = {};
+    $('rtime').firstChild.textContent = '0.0s';
+  }
+  function setOverlay(html) { over.innerHTML = html; over.hidden = !html; }
+  function showReady() {
+    state = 'ready'; reset();
+    setOverlay('<h2>Open Road</h2><p>Hold ◀ or ▶ (or the arrow keys) to steer. The car drifts, so ease off early. Watch for blinkers.</p><button class="pill primary" id="rgo">Start driving</button>');
+    $('rgo').onclick = start; draw();
+  }
+  function start() { reset(); state = 'run'; setOverlay(''); }
+  function crash() {
+    state = 'over';
+    const nb = t > best; if (nb) { best = t; store.set('road-best', best); }
+    $('rbest').textContent = 'Best ' + best.toFixed(1) + 's';
+    setOverlay('<h2>Crashed</h2><div class="big">' + t.toFixed(1) + 's</div><p>' + (nb ? 'New best time.' : 'Best: ' + best.toFixed(1) + 's') + '</p><button class="pill primary" id="rgo">Drive again</button>');
+    $('rgo').onclick = start;
+  }
+
+  /* traffic */
+  const laneBusy = (l, yMax) => cars.some(c => Math.abs(c.x - laneX(l)) < 45 && c.y - c.h / 2 < yMax);
+  function mk(kind, lane, y) {
+    const truck = kind === 'truck';
+    return { kind, x: laneX(lane), y, w: truck ? 56 : PW, h: truck ? 150 : PH, base: truck ? .8 : .6, vyf: truck ? .8 : .6,
+      color: pick(COLORS), trailer: pick(TRAILERS), sig: 0, ang: 0, changer: false, st: 0, cd: 1.2 + Math.random() * 1.6, sigT: 0, chT: 0 };
+  }
+  function spawnRow() {
+    const ramp = ramps.find(r => !r.done);
+    const free = [0, 1, 2].filter(l => !(ramp && ramp.lane === l) && !laneBusy(l, 150)).sort(() => Math.random() - .5);
+    if (!free.length) { spawnDist = 40; return; }
+    const n = Math.min(free.length, Math.random() < Math.min(.1 + t / 160, .4) ? 2 : 1);
+    const truckP = t < 12 ? 0 : Math.min(.12 + (t - 12) / 150, .3);
+    const changeP = t < 22 ? 0 : Math.min(.2 + (t - 22) / 120, .4);
+    for (let i = 0; i < n; i++) {
+      const truck = Math.random() < truckP;
+      const c = mk(truck ? 'truck' : 'car', free[i], 0);
+      c.y = -c.h / 2;
+      if (!truck && Math.random() < changeP) c.changer = true;
+      cars.push(c);
+    }
+    spawnDist = Math.max(120, 260 - t * 2.2) + Math.random() * 120;
+  }
+  function spawnRamp() {
+    const side = Math.random() < .5 ? -1 : 1, lane = side < 0 ? 0 : 2;
+    if (laneBusy(lane, 330) || ramps.some(r => !r.done)) { rampCd = 1.2; return; }
+    const r = { side, lane, y: -RAMP_L - PH / 2, done: false };
+    const c = mk('ramp', lane, -PH / 2); c.ramp = r; c.s = 0; c.base = c.vyf = .3;
+    c.x = side < 0 ? ROADX - 26 : ROADX + ROADW + 26;
+    ramps.push(r); cars.push(c);
+    rampCd = Math.max(6, 14 - (t - 34) / 12) + Math.random() * 3;
+  }
+  function follow() {
+    const vs = cars.filter(c => c.kind !== 'ramp').sort((a, b) => a.y - b.y);
+    for (let i = 0; i < vs.length; i++) {
+      const v = vs[i]; v.vyf = v.base;
+      for (let j = 0; j < i; j++) {
+        const f = vs[j];
+        if (Math.abs(v.x - f.x) < (v.w + f.w) / 2 + 8) {
+          const gap = (v.y - v.h / 2) - (f.y + f.h / 2);
+          if (gap < 50 && f.vyf > v.vyf) v.vyf = f.vyf;
+        }
+      }
+    }
+  }
+  function moveCar(c, dt) {
+    if (c.kind === 'ramp') {
+      const r = c.ramp; c.s += .7 * speed * dt; c.y = r.y + RAMP_L - c.s;
+      const dir = -r.side, m0 = RAMP_L - 120, m1 = RAMP_L - 10, x0 = r.side < 0 ? ROADX - 26 : ROADX + ROADW + 26;
+      const p = clamp((c.s - m0) / (m1 - m0), 0, 1);
+      c.x = x0 + (laneX(r.lane) - x0) * smooth(p);
+      c.sig = c.s > RAMP_L - 230 ? dir : 0;
+      c.ang = dir * .32 * Math.sin(p * Math.PI);
+      if (p >= 1) { c.kind = 'car'; c.sig = 0; c.ang = 0; c.base = c.vyf = .3; r.done = true; }
+      return;
+    }
+    c.y += speed * c.vyf * dt;
+    if (!c.changer) return;
+    if (c.st === 0 && c.y > 10) {
+      c.cd -= dt;
+      if (c.cd <= 0) {
+        const cur = laneOf(c.x);
+        const opts = [cur - 1, cur + 1].filter(l => l >= 0 && l <= 2 && !cars.some(v => v !== c && Math.abs(v.x - laneX(l)) < 45 && Math.abs(v.y - c.y) < (v.h + c.h) / 2 + 70));
+        if (!opts.length) c.cd = .8;
+        else {
+          const pl = laneOf(px);
+          c.to = opts.length > 1 && Math.random() < .5 ? (Math.abs(opts[0] - pl) < Math.abs(opts[1] - pl) ? opts[0] : opts[1]) : pick(opts);
+          c.sig = c.to > cur ? 1 : -1; c.st = 1; c.sigT = Math.max(.7, 1.2 - t / 150);
+        }
+      }
+    } else if (c.st === 1) {
+      c.sigT -= dt;
+      if (c.sigT <= 0) { c.st = 2; c.chT = 0; c.fromX = c.x; c.toX = laneX(c.to); }
+    } else if (c.st === 2) {
+      c.chT += dt; const p = Math.min(c.chT / .9, 1);
+      c.x = c.fromX + (c.toX - c.fromX) * smooth(p); c.ang = c.sig * .2 * Math.sin(p * Math.PI);
+      if (p >= 1) { c.st = 3; c.sig = 0; c.ang = 0; }
+    }
+  }
+  function update(dt) {
+    if (state !== 'run') return;
+    t += dt; speed = Math.min(230 + t * 6, 600); offset = (offset + speed * dt) % 80; dist += speed * dt;
+    for (const [th, text] of BANNERS) if (t >= th && !shown[th]) { shown[th] = 1; banner = { text, left: 3.4 }; }
+    if (banner) { banner.left -= dt; if (banner.left <= 0) banner = null; }
+    /* drifting player */
+    const inp = clamp(keys.r - keys.l + held.r - held.l + touch, -1, 1);
+    vx += inp * 1300 * dt;
+    const drag = inp === 0 ? 2.6 : (Math.sign(inp) === Math.sign(vx) ? .5 : 1.6);
+    vx = clamp(vx * Math.exp(-drag * dt), -360, 360);
+    ang += (inp * .36 + vx / 360 * .28 - ang) * Math.min(1, dt * 8);
+    px += vx * dt;
+    const lo = ROADX + PW / 2 + 3, hi = ROADX + ROADW - PW / 2 - 3;
+    if (px < lo) { px = lo; vx = Math.abs(vx) * .35; } else if (px > hi) { px = hi; vx = -Math.abs(vx) * .35; }
+    for (const m of marks) m.y += speed * dt;
+    marks = marks.filter(m => m.y < H + 10);
+    if (Math.abs(vx) > 140 && marks.length < 160) {
+      const cs = Math.cos(ang), sn = Math.sin(ang), ry = PH / 2 - 10, rx = PW / 2 - 4;
+      for (const s of [-1, 1]) marks.push({ x: px + s * rx * cs - ry * sn, y: PY + s * rx * sn + ry * cs });
+    }
+    /* traffic */
+    spawnDist -= speed * .62 * dt; if (spawnDist <= 0) spawnRow();
+    if (t >= 34) { rampCd -= dt; if (rampCd <= 0) spawnRamp(); }
+    follow();
+    for (const r of ramps) r.y += speed * dt;
+    ramps = ramps.filter(r => r.y < H + 60);
+    for (const c of cars) moveCar(c, dt);
+    cars = cars.filter(c => c.y < H + 110);
+    for (const c of cars) {
+      if (Math.abs(px - c.x) < (PW + c.w) / 2 - 8 && Math.abs(PY - c.y) < (PH + c.h) / 2 - 9) { crash(); break; }
+    }
+    $('rtime').firstChild.textContent = t.toFixed(1) + 's';
+  }
+
+  /* drawing: everything snaps to a G-unit pixel grid */
+  const gx = v => Math.round(v / G) * G;
+  const hsh = (a, b) => { let x = (a * 374761393 + b * 668265263) | 0; x = ((x ^ (x >>> 13)) * 1274126177) | 0; return (x ^ (x >>> 16)) >>> 0; };
+  function R(c, col, x, y, w, h) {
+    const x0 = gx(x), y0 = gx(y), x1 = gx(x + w), y1 = gx(y + h);
+    c.fillStyle = col; c.fillRect(x0, y0, Math.max(G, x1 - x0), Math.max(G, y1 - y0));
+  }
+  const blk = (c, col, x, y, w, h) => { R(c, col, x + G, y, w - 2 * G, h); R(c, col, x, y + G, w, h - 2 * G); };   /* block with clipped corners */
+  function shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16), m = v => clamp(Math.round(v * f), 0, 255);
+    return 'rgb(' + m(n >> 16 & 255) + ',' + m(n >> 8 & 255) + ',' + m(n & 255) + ')';
+  }
+  /* each vehicle is painted unrotated onto a tiny sprite, then turned with nearest-neighbour so it stays pixel-sharp */
+  const sp = document.createElement('canvas'); sp.width = 36; sp.height = 64;
+  const sctx = sp.getContext('2d'); sctx.setTransform(1 / G, 0, 0, 1 / G, sp.width / 2, sp.height / 2);
+  function veh(x, y, w, h, color, a, c) {
+    const s = sctx, truck = c && c.kind === 'truck', hw = w / 2, hh = h / 2, INK = '#0d1117';
+    s.clearRect(-120, -140, 240, 280);
+    R(s, 'rgba(0,0,0,.28)', -hw + G, -hh + G, w, h);
+    const wy = truck ? [-hh + 9, -hh + 60, hh - 42, hh - 24] : [-hh + 9, hh - 27];
+    for (const yy of wy) { R(s, '#0b0e12', -hw - G, yy, 2 * G, 5 * G); R(s, '#0b0e12', hw - G, yy, 2 * G, 5 * G); }
+    if (truck) {
+      blk(s, INK, -hw, -hh + 51, w, h - 51); blk(s, c.trailer, -hw + G, -hh + 51 + G, w - 2 * G, h - 51 - 2 * G);
+      R(s, 'rgba(255,255,255,.4)', -hw + G, -hh + 51 + G, G, h - 51 - 2 * G);
+      for (let yy = -hh + 66; yy < hh - 10; yy += 21) R(s, 'rgba(0,0,0,.2)', -hw + 2 * G, yy, w - 4 * G, G);
+      blk(s, INK, -hw + G, -hh, w - 2 * G, 48); blk(s, color, -hw + 2 * G, -hh + G, w - 4 * G, 48 - 2 * G);
+      R(s, shade(color, .75), -hw + 2 * G, -hh + 38, w - 4 * G, 2 * G);
+      R(s, '#1b2735', -hw + 3 * G, -hh + 9, w - 6 * G, 15); R(s, '#6f93bd', -hw + 3 * G, -hh + 9, G, G);
+    } else {
+      blk(s, INK, -hw, -hh, w, h); blk(s, color, -hw + G, -hh + G, w - 2 * G, h - 2 * G);
+      R(s, shade(color, 1.3), -hw + 2 * G, -hh + G, w - 4 * G, G);
+      R(s, shade(color, .75), -hw + G, hh - 5 * G, w - 2 * G, 4 * G);
+      R(s, '#1b2735', -hw + 2 * G, -hh + 18, w - 4 * G, 15); R(s, '#6f93bd', -hw + 2 * G, -hh + 18, G, G);
+      R(s, '#1b2735', -hw + 3 * G, hh - 30, w - 6 * G, 9);
+    }
+    R(s, '#fff6c8', -hw + G, -hh + G, 3 * G, G); R(s, '#fff6c8', hw - 4 * G, -hh + G, 3 * G, G);
+    R(s, '#d8301f', -hw + G, hh - 2 * G, 3 * G, G); R(s, '#d8301f', hw - 4 * G, hh - 2 * G, 3 * G, G);
+    if (c && c.sig && Math.floor(t * 5) % 2 === 0) {
+      const sx = c.sig * (hw - 1), spots = [-hh + 6, hh - 6];
+      if (truck) spots.push(-hh + 52);
+      for (const sy of spots) { R(s, 'rgba(255,176,0,.45)', sx - 2 * G, sy - 2 * G, 4 * G, 4 * G); R(s, '#ffb000', sx - G, sy - G, 2 * G, 2 * G); }
+    }
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    ctx.translate(gx(x), gx(y)); ctx.rotate(Math.round((a || 0) / .08) * .08);   /* turns in small steps, like a sprite sheet */
+    ctx.drawImage(sp, -sp.width / 2 * G, -sp.height / 2 * G, sp.width * G, sp.height * G);
+    ctx.restore();
+  }
+  function ramp(r) {
+    const e = r.side < 0 ? ROADX : ROADX + ROADW, o = e + r.side * 44, y0 = r.y, y1 = r.y + RAMP_L + 70;
+    const ox = y => y < y0 + 130 ? e + (o - e) * clamp((y - y0) / 130, 0, 1) : e + (o - e) * clamp((y1 - y) / 60, 0, 1);
+    for (let y = gx(Math.max(y0, -G)); y < Math.min(y1, H + G); y += G) {
+      const x = gx(ox(y + G / 2)), a = Math.min(e, x), b = Math.max(e, x);
+      if (b - a <= 0) continue;
+      ctx.fillStyle = '#2a2f38'; ctx.fillRect(a, y, b - a, G);
+      ctx.fillStyle = '#d8d8d8'; ctx.fillRect(r.side < 0 ? a : b - G, y, G, G);
+    }
+  }
+  function draw() {
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#2f6b45'; ctx.fillRect(0, 0, W + G, H + G);
+    const ROW = 24, base = dist % ROW, ri = Math.floor(dist / ROW);
+    for (let k = -1; k * ROW < H + ROW; k++) {
+      const y = gx(k * ROW + base), idx = ri - k;
+      for (const side of [0, 1]) {
+        const hv = hsh(idx, side + 7), x0 = side ? ROADX + ROADW + 12 : 6, span = side ? W - x0 - 18 : ROADX - 24;
+        if (hv % 3 === 0) { const x = gx(x0 + (hv >>> 4) % span); R(ctx, '#255a39', x, y, 2 * G, G); R(ctx, '#255a39', x + G, y - G, G, G); }
+        if (hv % 11 === 1) { const x = gx(x0 + (hv >>> 8) % span); R(ctx, '#1f4d31', x, y, 4 * G, 4 * G); R(ctx, '#3f8a5b', x + G, y + G, 2 * G, G); R(ctx, '#2f6b45', x + 3 * G, y, G, G); }
+      }
+    }
+    for (const r of ramps) ramp(r);
+    ctx.fillStyle = '#2a2f38'; ctx.fillRect(ROADX, 0, ROADW, H + G);
+    for (let k = -1; k * ROW < H + ROW; k++) {   /* road grit */
+      const hv = hsh(ri - k, 3);
+      if (hv % 2 === 0) R(ctx, '#323843', ROADX + G + (hv >>> 3) % (ROADW - 2 * G), k * ROW + base, G, G);
+      if (hv % 5 === 0) R(ctx, '#23272f', ROADX + G + (hv >>> 9) % (ROADW - 2 * G), k * ROW + base + 2 * G, 2 * G, G);
+    }
+    ctx.fillStyle = '#e8e8e8'; ctx.fillRect(ROADX - G, 0, G, H + G); ctx.fillRect(ROADX + ROADW, 0, G, H + G);
+    for (let l = 1; l < 3; l++) for (let y = -80 + offset; y < H; y += 80) R(ctx, '#cfd3d8', ROADX + LW * l - G / 2, y, G, 39);
+    for (const m of marks) R(ctx, 'rgba(0,0,0,.3)', m.x - 2, m.y - 3, G, 2 * G);
+    for (const c of cars) veh(c.x, c.y, c.w, c.h, c.color, c.ang, c);
+    veh(px, PY, PW, PH, '#e0714f', ang, null);
+    if (banner) {
+      if (bn.textContent !== banner.text) bn.textContent = banner.text;
+      bn.style.opacity = Math.min(1, banner.left * 2, (3.4 - banner.left) * 4);
+    } else if (bn.style.opacity !== '0') bn.style.opacity = '0';
+  }
+  function loop(ts) {
+    const dt = Math.min(.05, (ts - last) / 1000 || 0); last = ts;
+    update(dt); draw(); raf = requestAnimationFrame(loop);
+  }
+
+  /* input: hold to steer */
+  function hold(el, side) {
+    el.addEventListener('pointerdown', e => { e.preventDefault(); held[side] = 1; });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => el.addEventListener(n, () => { held[side] = 0; }));
+  }
+  hold($('rleft'), 'l'); hold($('rright'), 'r');
+  const setTouch = e => { const r = stage.getBoundingClientRect(); touch = e.clientX < r.left + r.width / 2 ? -1 : 1; };
+  stage.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; tdown = true; try { stage.setPointerCapture(e.pointerId); } catch (x) {} setTouch(e); });
+  stage.addEventListener('pointermove', e => { if (tdown) setTouch(e); });
+  ['pointerup', 'pointercancel'].forEach(n => stage.addEventListener(n, () => { tdown = false; touch = 0; }));
+  const clearInput = () => { keys.l = keys.r = held.l = held.r = 0; touch = 0; tdown = false; };
+  window.addEventListener('blur', clearInput);
+  window.addEventListener('resize', () => { if (current === 'road') fit(); });
+  const isL = k => k === 'ArrowLeft' || k === 'a' || k === 'A', isR = k => k === 'ArrowRight' || k === 'd' || k === 'D';
+  return {
+    enter() {
+      clearInput();
+      $('rbest').textContent = best ? 'Best ' + best.toFixed(1) + 's' : '';
+      requestAnimationFrame(() => { fit(); showReady(); });
+      cancelAnimationFrame(raf); last = performance.now(); raf = requestAnimationFrame(loop);
+    },
+    leave() { cancelAnimationFrame(raf); raf = 0; clearInput(); },
+    key(e) {
+      if (isL(e.key)) { keys.l = 1; e.preventDefault(); }
+      else if (isR(e.key)) { keys.r = 1; e.preventDefault(); }
+      else if ((e.key === ' ' || e.key === 'Enter') && state !== 'run') { start(); e.preventDefault(); }
+    },
+    keyup(e) { if (isL(e.key)) keys.l = 0; else if (isR(e.key)) keys.r = 0; },
+    summary() { return best ? 'Best ' + best.toFixed(1) + 's' : 'No run yet'; }
+  };
+})();
+
+/* ============ DEEP DIVE ============ */
+const Dive = (() => {
+  /* Offline word pools. Every accepted answer is listed here (common / uncommon / rare). Multi-word answers use _ and are matched with spaces and punctuation ignored. */
+  const POOLS = [
+    ['An animal',
+     'ant ape bat bear bee bird bull butterfly camel cat chicken cow crab crocodile deer dog dolphin donkey duck eagle elephant fish fox frog giraffe goat goose gorilla hamster horse kangaroo koala lion lizard monkey mouse octopus owl panda parrot penguin pig rabbit rat shark sheep snake spider squirrel tiger turtle wolf zebra cheetah leopard hippo hippopotamus rhino rhinoceros buffalo turkey whale seal swan snail worm wasp fly bison hedgehog otter peacock pigeon rooster sparrow tortoise walrus yak bull ox lamb cub calf puppy kitten hen duckling bunny',
+     'alpaca antelope armadillo badger baboon beaver bobcat caribou chameleon chimpanzee cobra cougar coyote crow dingo dragonfly falcon ferret flamingo gazelle gecko gibbon hawk hyena iguana jackal jaguar kingfisher lemur llama lobster lynx macaw manatee meerkat mole moose mule ostrich panther pelican platypus porcupine possum puma quail raccoon raven reindeer salamander scorpion skunk sloth stork toad toucan vulture warthog weasel wombat woodpecker beetle mosquito cricket grasshopper ladybug moth mantis bumblebee hornet crane heron seagull pheasant gerbil chipmunk orangutan mandrill oryx impala wildebeest tapir okapi capybara anteater pangolin aardvark narwhal beluga orca stingray seahorse jellyfish starfish clam oyster salmon trout tuna cod eel barracuda piranha newt viper python anaconda mamba boa adder rattlesnake cockatoo canary budgerigar finch swallow robin cardinal bluejay magpie albatross puffin emu kiwi cassowary rhea condor osprey buzzard kestrel nightingale cockroach termite flea tick louse lark dove hummingbird ibis cormorant gull pelican goldfish catfish shrimp prawn squid cuttlefish slug leech centipede millipede tarantula firefly cicada locust bobcat marmot bat bat vole shrew mink stoat badger lamb ram ewe sow boar piglet stallion mare foal pony donkey mule ostrich gnu zebu bonobo marmoset macaque langur tamarin lemming hare coati civet mongoose',
+     'aye-aye binturong bongo bilby blobfish dugong echidna fossa gharial gerenuk hoatzin indri jerboa kakapo kinkajou lammergeier markhor numbat ocelot pika quokka quoll saiga serval shoebill sifaka solenodon springbok tarsier tenrec thylacine vaquita wolverine zorilla axolotl bandicoot basilisk bushbaby dhole dikdik gaur hartebeest ibex kudu lechwe mara muntjac nilgai oribi pronghorn saola takin urial vicuna wallaby wallaroo agouti babirusa genet sunfish okapi tapir potoo kea kagu quetzal tinamou secretarybird oilbird hornbill bowerbird lyrebird frogmouth nautilus pangolin dunnart bettong potoroo bilby tuatara gila monitor komodo'],
+    ['A country',
+     'america usa canada mexico brazil argentina chile peru colombia china japan india russia australia germany france italy spain portugal england britain ireland scotland wales egypt kenya nigeria ghana morocco turkey greece sweden norway finland denmark poland ukraine thailand vietnam korea indonesia malaysia singapore philippines pakistan iran iraq israel',
+     'afghanistan albania algeria andorra angola armenia austria azerbaijan bahamas bahrain bangladesh barbados belarus belgium belize benin bhutan bolivia bosnia botswana brunei bulgaria burundi cambodia cameroon chad comoros congo croatia cuba cyprus czechia djibouti dominica ecuador eritrea estonia eswatini ethiopia fiji gabon gambia georgia grenada guatemala guinea guyana haiti honduras hungary iceland jamaica jordan kazakhstan kiribati kosovo kuwait kyrgyzstan laos latvia lebanon lesotho liberia libya liechtenstein lithuania luxembourg madagascar malawi maldives mali malta mauritania mauritius micronesia moldova monaco mongolia montenegro mozambique myanmar burma namibia nauru nepal netherlands holland nicaragua niger macedonia oman palau panama paraguay qatar romania rwanda samoa senegal serbia seychelles slovakia slovenia somalia sudan suriname switzerland syria taiwan tajikistan tanzania togo tonga tunisia turkmenistan tuvalu uganda uruguay uzbekistan vanuatu venezuela yemen zambia zimbabwe usa uk uae newzealand southafrica northkorea southkorea saudiarabia sierraleone costarica elsalvador srilanka unitedstates unitedkingdom czechrepublic ivorycoast',
+     'caboverde capeverde dominicanrepublic equatorialguinea guineabissau marshallislands papuanewguinea saintlucia saintkitts stvincent santome solomonislands timorleste eastimor trinidad tobago antigua barbuda vatican sanmarino southsudan centralafricanrepublic burkinafaso northmacedonia palestine'],
+    ['A fruit',
+     'apple banana orange grape strawberry blueberry raspberry cherry peach pear plum mango pineapple watermelon melon lemon lime coconut kiwi papaya grapefruit apricot avocado blackberry cantaloupe fig pomegranate tangerine nectarine cranberry date guava lychee',
+     'blackcurrant boysenberry breadfruit cantaloupe clementine currant custardapple dragonfruit durian elderberry feijoa gooseberry honeydew jackfruit jujube kumquat loganberry loquat mandarin mulberry olive passionfruit persimmon plantain pomelo prune quince raisin rambutan redcurrant satsuma soursop starfruit tamarind ugli mangosteen sultana tomato cucumber pumpkin squash pepper berry bilberry huckleberry cloudberry lingonberry medlar damson greengage sapodilla longan bananas apples',
+     'ackee acai atemoya bael bergamot cempedak carambola cherimoya chokeberry cupuacu genip grumichama jabuticaba jambul kiwano langsat lucuma marang miracleberry naranjilla pawpaw pepino physalis pitaya pitanga pluot salak santol sloe soncoya surinamcherry tangelo yuzu zalacca aronia salmonberry serviceberry sugarapple wolfberry goji amla'],
+    ['A capital city',
+     'london paris berlin rome madrid lisbon dublin washington ottawa mexicocity moscow beijing tokyo seoul delhi newdelhi bangkok cairo canberra wellington athens vienna stockholm oslo helsinki copenhagen warsaw prague budapest brussels amsterdam bern kyiv kiev jakarta manila hanoi nairobi lima bogota santiago havana',
+     'abuja accra addisababa algiers amman ankara asuncion baghdad baku bamako bangui banjul beirut belgrade bishkek brasilia bratislava bucharest buenosaires canberra caracas colombo conakry dakar damascus dhaka doha dushanbe freetown gaborone georgetown harare islamabad jerusalem kabul kampala kathmandu khartoum kigali kingston kinshasa kualalumpur kuwaitcity lapaz libreville lilongwe lome luanda lusaka luxembourg maputo maseru minsk mogadishu monrovia montevideo muscat nassau ndjamena niamey nicosia nouakchott panamacity phnompenh podgorica portauprince portmoresby pretoria pyongyang quito rabat reykjavik riga riyadh sanjose sansalvador sanaa sarajevo skopje sofia suva taipei tallinn tashkent tbilisi tegucigalpa tehran thimphu tirana tripoli tunis ulaanbaatar vaduz valletta victoria vientiane vilnius windhoek yaounde yerevan zagreb singapore monaco vatican astana abudhabi manama bridgetown belmopan bissau malabo praia',
+     'apia asmara ashgabat dodoma funafuti hargeisa honiara majuro moroni mbabane nukualofa naypyidaw palikir paramaribo roseau sucre sanmarino saotome stjohns castries basseterre kingstown yaren ngerulmud andorralavella bandarseribegawan dili sri jayawardenepura djibouti jubа juba hamilton nuuk'],
+    ['A kitchen item',
+     'cup cupboard cooker counter chair table plate bowl fork knife spoon pan pot kettle oven stove fridge freezer sink toaster microwave blender mug glass dish tray whisk spatula ladle grater peeler colander sieve tongs teapot jug bottle lid board chopping apron towel cloth sponge bin rack shelf drawer tin can opener',
+     'blender breadbin cleaver corkscrew cutlery dishwasher dishrack dishcloth extractor griddle grill kettle kitchenscale mixer mortar pestle muffintin ovenglove platter rollingpin saucepan skillet slowcooker steamer stockpot teaspoon thermos timer tupperware wok casserole carafe ramekin tureen decanter cookiecutter piping pizza cutter bakingtray cakestand fryingpan frypan pressurecooker airfryer ricecooker toastmaker waffleiron juicer processor foodprocessor coffeemaker espresso percolator bread breadknife butterdish eggcup eggtimer measuringcup measuringjug canopener garlicpress potholder trivet teatowel dishtowel placemat coaster napkin saltshaker peppermill spicerack condiment pitcher fondue',
+     'chinois cruet cafetiere cheesecloth mandoline mezzaluna madeleinepan tagine dutchoven bainmarie springform tamis zester ricer spiralizer sous vide sousvide samovar salamander skimmer spurtle trussing fishslice tenderiser'],
+    ['A musical instrument',
+     'guitar piano drum drums violin flute trumpet saxophone clarinet cello harp bass trombone tuba organ keyboard harmonica ukulele banjo accordion triangle tambourine xylophone recorder oboe bassoon viola synthesizer synth bagpipes',
+     'bugle cornet piccolo timpani cymbals maracas castanets bongos congas glockenspiel marimba vibraphone celesta harpsichord clavichord mandolin lute sitar tabla zither dulcimer lyre balalaika bouzouki oud kalimba theremin didgeridoo panpipes ocarina whistle kazoo melodica horn frenchhorn flugelhorn euphonium sousaphone bagpipe fiddle doublebass electricguitar bassguitar steeldrum gong tamtam cowbell washboard jewsharp harmonium concertina cajon djembe',
+     'tanpura tiple theorbo tromba talharpa tamburica shamisen koto erhu pipa guzheng sheng sarod santoor shehnai veena sarangi rebab ney kanun qanun cimbalom hurdygurdy nyckelharpa crwth serpent ophicleide sackbut shawm krummhorn rackett viol viola_da_gamba baryton glassharmonica ondes martenot hang handpan udu berimbau charango cuatro bandoneon duduk zurna bodhran uilleann gusli domra kantele hardingfiddle theremin'],
+    ['A color',
+     'red blue green yellow orange purple pink brown black white grey gray violet indigo cyan magenta turquoise gold silver beige tan maroon navy teal lime lilac peach cream crimson scarlet',
+     'amber aqua aquamarine azure burgundy bronze charcoal chartreuse chocolate cobalt copper coral emerald fuchsia ivory jade khaki lavender lemon mauve mint mustard olive plum rose ruby rust salmon sapphire sienna tangerine ultramarine vermilion cerulean carmine ochre umber sepia taupe periwinkle saffron sage slate auburn cardinal champagne cinnamon denim flamingo forest hazel honey mahogany maize mulberry orchid pearl pistachio pumpkin raspberry sand tomato wine wheat primrose cherry apricot buff ecru fawn puce',
+     'celadon cinnabar cordovan cerise carnelian viridian gamboge glaucous isabelline jonquil lavenderblush liver mikado mountbatten pomona razzmatazz smalt tuscan verdigris xanadu zaffre byzantium cyan celeste eburnean falu feldgrau heliotrope icterine jasmine kobi lapis ligh linen mauvelous myrtle nadeshiko ochre paynes sangria tenne thistle vanilla wenge xanthic yinmn zomp'],
+    ['A sport',
+     'soccer football basketball baseball tennis golf cricket rugby hockey swimming running boxing volleyball badminton cycling skiing snowboarding skating surfing sailing rowing wrestling judo karate archery fencing gymnastics athletics diving bowling climbing',
+     'handball netball softball squash lacrosse polo croquet curling darts snooker billiards pool skateboarding triathlon marathon sprinting hurdles shotput discus javelin highjump longjump polevault weightlifting powerlifting taekwondo kickboxing sumo bodybuilding canoeing kayaking rafting windsurfing kitesurfing waterpolo equestrian dressage showjumping horseracing racing motorracing rallying karting biathlon bobsled luge skeleton ski jumping skiing iceskating icehockey figureskating speedskating crossfit parkour pickleball tabletennis pingpong paddle padel baseball rounders kabaddi hurling gaelicfootball sailing fishing hunting shooting orienteering trampolining cheerleading dodgeball ultimate frisbee quidditch softball slalom decathlon heptathlon pentathlon steeplechase tugofwar',
+     'sepaktakraw savate skijoring shinty sambo bandy korfball pelota jaialai sepak kendo aikido capoeira hapkido muaythai wushu silat kalaripayattu fistball floorball ringette bossaball camogie shotput caber hammerthrow petanque boules bocce cornhole bowls skibob snowkiting luge kabbadi underwaterhockey octopush tchoukball'],
+    ['A vegetable',
+     'carrot cabbage cucumber celery corn cauliflower potato tomato onion garlic lettuce spinach broccoli pea peas bean beans pepper pumpkin mushroom radish beetroot beet turnip squash eggplant aubergine zucchini courgette leek asparagus kale sweetcorn parsnip',
+     'artichoke arugula bokchoy brusselsprouts butternut capsicum cassava chard chickpea chicory chilli chives collards cress daikon endive fennel ginger horseradish jicama kohlrabi lentil mangetout okra rhubarb rocket rutabaga scallion shallot swede yam watercress sprouts springonion greenbean runnerbean broadbean kidneybean sweetpotato bellpepper jalapeno cress mustardgreens pakchoi napa romaine iceberg gherkin pickle olive tomatillo plantain taro salsify nettle samphire',
+     'celeriac cardoon chayote calabrese celtuce skirret oca ulluco mizuna tatsoi komatsuna ramps fiddlehead cavolonero romanesco kai-lan kailan lotusroot burdock sorrel purslane orache hostas dandelion yacon manioc malanga eddo moringa cassava bittergourd bottlegourd luffa'],
+    ['A job',
+     'police pilot plumber painter pharmacist programmer doctor nurse teacher lawyer engineer chef cook baker butcher farmer driver cleaner soldier firefighter dentist vet vets scientist artist actor singer dancer writer author waiter waitress cashier clerk manager secretary accountant banker builder carpenter electrician mechanic barber hairdresser tailor janitor guard sailor judge',
+    'architect astronaut auditor biologist blacksmith bricklayer broker bus butler captain caretaker chemist coach columnist conductor consultant counselor curator detective designer dietitian director editor economist electrician fisherman florist gardener geologist glazier guide hunter illustrator inspector instructor interpreter jeweler journalist lecturer librarian lifeguard locksmith lumberjack magician mathematician mayor mechanic midwife miner musician navigator officer optician paramedic photographer physicist physician plasterer poet politician porter postman postwoman potter professor psychologist receptionist reporter researcher roofer sailor salesman scientist sculptor senator sheriff shopkeeper surgeon surveyor tailor tiler trader translator typist undertaker upholsterer valet waiter welder zoologist paralegal paediatrician podiatrist pediatrician paramedic radiographer therapist physiotherapist osteopath chiropractor courier mailman postal developer analyst technician labourer laborer operator supervisor trainer tutor investigator ambassador diplomat monk priest nun vicar rabbi imam',
+     'perfumer palaeontologist paleontologist pathologist puppeteer pomologist phlebotomist pitmaster apothecary alchemist cartographer cobbler cooper cordwainer fletcher farrier falconer gaffer haberdasher harpooner horologist ironmonger joiner lamplighter lexicographer luthier milliner minstrel numismatist ornithologist orthodontist oenologist pawnbroker perfumier philatelist rigger sommelier taxidermist thatcher toxicologist vintner wheelwright zythologist ophthalmologist cardiologist neurologist anesthesiologist dermatologist'],
+    ['A body part',
+     'head hair face eye eyes ear ears nose mouth lip lips tooth teeth tongue neck shoulder arm elbow wrist hand finger fingers thumb chest back stomach belly hip leg knee ankle foot feet toe toes heart lung lungs brain skin bone bones muscle blood liver kidney',
+     'abdomen armpit bicep biceps buttocks calf cheek chin collarbone eyebrow eyelash eyelid forehead gum gums heel jaw knuckle nail nostril palm pelvis rib ribs scalp shin shinbone skull spine temple thigh throat tricep triceps waist navel intestine intestines bladder spleen pancreas esophagus windpipe trachea vein artery tendon ligament cartilage nerve pupil iris retina cornea eardrum earlobe fingernail toenail hamstring quadriceps abs',
+     'epiglottis epidermis ethmoid epicondyle clavicle femur tibia fibula humerus radius ulna patella sternum scapula sacrum coccyx mandible maxilla cranium vertebra vertebrae diaphragm larynx pharynx uvula tonsil tonsils thyroid appendix duodenum colon rectum gallbladder aorta ventricle atrium cochlea hippocampus cerebellum cerebrum thalamus hypothalamus achilles tendon philtrum glabella'],
+    ['A tree',
+     'oak pine maple birch willow elm ash beech cedar fir palm apple cherry walnut chestnut poplar spruce redwood sequoia cypress hickory olive lemon orange banana fig',
+     'acacia alder almond aspen balsa banyan baobab bamboo bay beech boxwood buckeye cottonwood dogwood ebony elder eucalyptus fig gingko ginkgo hawthorn hazel hemlock holly hornbeam juniper larch laurel linden lime magnolia mahogany mango mangrove mulberry pecan pear peach plane plum rowan sandalwood sassafras sycamore teak tamarind yew zelkova tulip tulip_tree wattle jacaranda rubber coconut date pistachio cashew pomegranate hibiscus lilac mimosa privet cherry_blossom cypress monkeypuzzle',
+     'mesquite moringa mopane mastic medlar bottlebrush catalpa chinaberry cinchona cola copal frangipani gumtree ironwood kapok kauri kentia lacebark lancewood lignum macadamia manuka mopane neem nutmeg osage pawpaw quandong quince redbud sal satinwood sapele sourwood tallow tamarack tupelo wollemi yellowwood ylang ceiba dragonblood jarrah karri marri marula njangsa rimu totara'],
+    ['A dog breed',
+     'beagle boxer bulldog poodle labrador retriever husky chihuahua dachshund pug rottweiler doberman terrier collie spaniel shepherd corgi dalmatian greyhound mastiff pomeranian schnauzer shihtzu maltese akita samoyed whippet pitbull',
+     'affenpinscher airedale basenji basset bernese bichon bloodhound borzoi bullmastiff cavalier chow cockapoo cocker dane deerhound foxhound greatdane havanese keeshond kelpie lhasaapso malamute newfoundland papillon pekingese pointer ridgeback saluki setter sheepdog staffy staffordshire weimaraner westie yorkie yorkshire alsatian jackrussell borderCollie bordercollie australianshepherd germanshepherd goldenretriever irishsetter englishsetter sharpei springer vizsla',
+     'briard bergamasco boerboel barbet bouvier azawakh basenji cesky dandie dinmont drever eurasier finnishspitz galgo hovawart karelian kooikerhondje lagotto leonberger lowchen mudi norfolk otterhound petitbasset puli rhodesian sealyham sloughi tosa xoloitzcuintli komondor kuvasz kerry bedlington borzoi cairn clumber spinone pumi plott stabyhoun'],
+    ['A gemstone or mineral',
+     'diamond ruby emerald sapphire opal pearl amethyst topaz garnet quartz jade turquoise amber onyx agate coal gold silver copper iron salt',
+     'alexandrite aquamarine aventurine beryl bloodstone carnelian chalcedony citrine coral cubiczirconia fluorite granite graphite gypsum hematite jasper jet kunzite lapis lapislazuli malachite marble moonstone obsidian olivine peridot pyrite rosequartz sardonyx spinel sunstone tanzanite tigereye tourmaline zircon mica talc feldspar calcite dolomite limestone sandstone basalt flint chalk slate bauxite cinnabar galena magnetite platinum tin lead zinc nickel',
+     'apatite azurite andalusite axinite alexandrite benitoite charoite chrysoberyl chrysoprase danburite diopside dioptase heliodor iolite kyanite larimar moldavite morganite painite prehnite rhodochrosite rhodonite sphene sugilite sodalite tsavorite variscite zoisite howlite labradorite amazonite ametrine epidote scheelite cassiterite stibnite realgar orpiment baryte fluorspar corundum cryolite dolomite'],
+    ['A dance',
+     'salsa swing ballet tango waltz jive disco hiphop tap breakdance foxtrot polka rumba samba conga twist macarena limbo jig ballroom folk square line',
+     'bachata bhangra bolero bollywood bossanova cancan charleston cha chacha flamenco fandango gavotte hornpipe hula jitterbug kizomba lambada lindyhop mambo mazurka merengue minuet morris paso pasodoble quickstep ragtime reel rockandroll shuffle stepdance shag tarantella twostep zumba zouk contemporary jazz modern lyrical pole belly bellydance moonwalk robot floss vogue krump twerk ceilidh maypole cakewalk bunnyhop hustle bump',
+     'seguidilla soca sardana strathspey schottische allemande bourree courante sarabande gigue farandole fado haka hopak kathak kathakali bharatanatyam odissi kuchipudi mohiniyattam garba dabke dabka tinikling tango_nuevo samba_de_gafieira capoeira maxixe milonga zamba cueca joropo cumbia vallenato mapale candombe lezginka kazachok trepak horah hora sirtaki zorba syrtos kolo csardas verbunkos polonaise krakowiak oberek cotillion galliard pavane volta branle estampie saltarello'],
+    ['A cheese',
+     'cheddar mozzarella parmesan brie camembert feta gouda swiss edam cottage cream blue gruyere provolone ricotta halloumi mascarpone stilton jack monterey colby havarti emmental',
+     'asiago boursin burrata cambozola comte danishblue dolcelatte emmenthal fontina gorgonzola grana jarlsberg limburger manchego manouri munster paneer pecorino quark raclette reblochon roquefort taleggio wensleydale cheshire lancashire leicester gloucester caerphilly derby wensleydale pepperjack muenster neufchatel mimolette morbier maroilles mahon cabrales idiazabal tetilla stracchino scamorza caciocavallo pepato fromage curd paneer labneh queso fresco cotija oaxaca chevre cantal beaufort livarot epoisses langres pontleveque saintnectaire tomme vacherin',
+     'maroilles mimolette morbier mahon abondance banon bleudauvergne boulette bruder bryndza casuflu cashel crowdie dunlop dunbarra gjetost harzer hushallsost kasseri kefalotyri koliba lymeswold lanark mizithra myzithra nabulsi oscypek ossau pavé pecorino_romano pinzgauer provel quesillo rubens sbrinz stinking_bishop tilsit tete_de_moine vezzena västerbotten wavel xynotyro zamorano'],
+    ['A sea creature',
+     'fish shark whale dolphin octopus squid crab lobster shrimp jellyfish starfish seahorse turtle seal walrus eel clam oyster mussel prawn salmon tuna cod ray stingray orca otter penguin',
+     'anchovy angelfish anemone barracuda barnacle beluga blowfish bluewhale catfish clownfish cockle coral cuttlefish dugong flounder grouper haddock hake halibut herring humpback krill limpet mackerel manatee manta marlin mullet narwhal nautilus oarfish perch piranha plankton pufferfish remora sailfish sardine scallop seaanemone seacucumber seaurchin seal sealion seaslug seasnake skate snapper sole sponge sturgeon swordfish trout turbot urchin whelk whaleshark hammerhead greatwhite mako tigershark nurseshark porpoise sealion elephantseal leopardseal moray conger lamprey hagfish albatross sunfish lionfish stonefish mantisshrimp hermitcrab spidercrab coconutcrab seastar sanddollar brittlestar',
+     'opah olm ophiuroid anglerfish blobfish chimaera coelacanth dumbooctopus fangtooth firefly_squid frilledshark gulper hatchetfish lanternfish oarfish pelican_eel viperfish vampiresquid tubeworm siphonophore salp sea_pen seapen nudibranch sea_hare seahare chiton abalone conch cowrie murex triton geoduck razorclam quahog periwinkle sea_spider pycnogonid horseshoecrab copepod amphipod isopod gribble pistolshrimp cleanershrimp ribbonworm'],
+  ];
+  const clean = w => w.toLowerCase().replace(/[^a-z]/g, '');
+  const PROMPTS = [];
+  POOLS.forEach(([q, c, u, r]) => {
+    const pool = {};
+    r.split(/\s+/).forEach(w => { if (w) pool[clean(w)] = 'r'; });
+    u.split(/\s+/).forEach(w => { if (w) pool[clean(w)] = 'u'; });
+    c.split(/\s+/).forEach(w => { if (w) pool[clean(w)] = 'c'; });
+    const byL = {};
+    for (const w in pool) { if (!w) continue; (byL[w[0]] = byL[w[0]] || []).push(w); }
+    for (const L in byL) {
+      const ws = byL[L];
+      if (ws.length >= 6 && ws.some(w => pool[w] === 'c')) PROMPTS.push({ q, L, pool });
+    }
+  });
+  const TIME = 25, N = 7, PTS = { c: 10, u: 40, r: 100, x: 25 };
+  const main = $('dmain');
+  let deck, idx, points, deadline, timer, locked, prompt, map, best = store.get('dive-best', 0);
+  const norm = s => s.toLowerCase().replace(/[^a-z]/g, '');
+  const meters = () => points * 10;
+  const fmt = n => n.toLocaleString('en-US');
+
+  function setGauge() {
+    const pct = Math.min(100, meters() / 70);
+    $('gmask').style.width = (100 - pct) + '%'; $('gdiver').style.left = pct + '%';
+    $('gdepth').textContent = fmt(meters()) + ' m';
+  }
+  function intro() {
+    clearInterval(timer); points = 0; setGauge();
+    $('dbest').textContent = best ? 'Best ' + fmt(best) + ' m' : '';
+    main.innerHTML = '<div class="dcount">Ready to dive</div><p class="dq">Seven prompts. Type one answer to each in 25 seconds.</p>' +
+      '<div class="tiers"><span>Common 10</span><span>Uncommon 40</span><span>Rare 100</span><span>Wrong 0</span></div>' +
+      '<p style="margin:0;color:var(--muted);font-size:.88rem">Every point is 10 meters. Rarer answers score more, and answers that do not fit the category are rejected. Perfect run: 7,000 m.</p>' +
+      '<button class="pill primary" id="dstart" style="align-self:flex-start;padding:12px 18px;font-size:.9rem">Start dive</button>';
+    $('dstart').onclick = begin;
+  }
+  function begin() {
+    deck = PROMPTS.slice().sort(() => Math.random() - .5).slice(0, N); idx = 0; points = 0; setGauge(); next();
+  }
+  function next() {
+    if (idx >= N) return end();
+    prompt = deck[idx]; locked = false;
+    map = prompt.pool;
+    main.innerHTML = '<div class="dcount">Prompt ' + (idx + 1) + ' of ' + N + '</div>' +
+      '<p class="dq">' + prompt.q + ' starting with <em>' + prompt.L.toUpperCase() + '</em></p>' +
+      '<div class="tbar"><i id="tfill"></i></div>' +
+      '<form class="dform" id="dform" autocomplete="off"><input id="dinput" type="text" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Your answer" placeholder="Type your answer"><button class="pill primary" type="submit">Dive</button><button class="pill" type="button" id="dskip">Skip</button></form>' +
+      '<div id="dmsg" role="status" aria-live="polite"></div>';
+    $('dform').onsubmit = e => { e.preventDefault(); answer(); };
+    $('dskip').onclick = () => { if (!locked) settle(0, 'Skipped. +0', 'bad'); };
+    $('dinput').focus({ preventScroll: true });
+    deadline = performance.now() + TIME * 1000;
+    clearInterval(timer);
+    timer = setInterval(() => {
+      const left = Math.max(0, deadline - performance.now()), f = $('tfill');
+      if (f) { f.style.width = (left / (TIME * 10)) + '%'; f.classList.toggle('low', left < 7000); }
+      if (left <= 0 && !locked) { settle(0, 'Time is up. +0', 'bad'); }
+    }, 100);
+  }
+  function lev1(a, b) {   /* true if a and b differ by at most one edit */
+    if (Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length > b.length) i++; else if (a.length < b.length) j++; else { i++; j++; }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1;
+  }
+  function lookup(a) {
+    if (map[a]) return { tier: map[a], word: a };
+    const alts = [];
+    if (a.endsWith('ies')) alts.push(a.slice(0, -3) + 'y');
+    if (a.endsWith('es')) alts.push(a.slice(0, -2));
+    if (a.endsWith('s')) alts.push(a.slice(0, -1));
+    alts.push(a + 's', a + 'es');
+    for (const x of alts) if (map[x]) return { tier: map[x], word: x };
+    if (a.length >= 6) for (const w in map) if (w[0] === a[0] && lev1(a, w)) return { tier: map[w], word: w, typo: true };
+    return null;
+  }
+  function answer() {
+    if (locked) return;
+    const a = clean($('dinput').value), m = $('dmsg');
+    if (!a) return;
+    if (a[0] !== prompt.L) { m.className = 'bad'; m.textContent = 'It has to start with ' + prompt.L.toUpperCase() + '. Try again.'; return; }
+    const hit = lookup(a);
+    if (hit) {
+      const tier = hit.tier, label = { c: 'Common', u: 'Uncommon', r: 'Rare find' }[tier];
+      return settle(PTS[tier], (hit.typo ? 'Close enough, counted as ' + hit.word + '. ' : '') + label + '. +' + PTS[tier], tier === 'r' ? 'good' : '');
+    }
+    m.className = 'bad'; m.textContent = 'Krillion does not accept that as ' + prompt.q.toLowerCase().replace(/^an? /, 'a/an ') + '. Try another.';
+    $('dinput').select();
+  }
+  function settle(pts, text, cls) {
+    locked = true; clearInterval(timer);
+    points += pts; setGauge();
+    const m = $('dmsg'); if (m) { m.className = cls; m.textContent = text; }
+    const inp = $('dinput'); if (inp) inp.disabled = true;
+    setTimeout(() => { if (current === 'dive') { idx++; next(); } }, 1300);
+  }
+  function end() {
+    clearInterval(timer);
+    const m = meters(), nb = m > best; if (nb) { best = m; store.set('dive-best', best); }
+    $('dbest').textContent = 'Best ' + fmt(best) + ' m';
+    const rank = m >= 5000 ? 'Abyssal. You know the odd corners.' : m >= 3000 ? 'Deep water. Plenty of unusual answers.' : m >= 1500 ? 'Mid-water. Try rarer answers next time.' : 'Shallow dive. Go past the obvious answer.';
+    main.innerHTML = '<div class="dres"><div class="dcount">Dive complete</div><div class="big">' + fmt(m) + ' m</div><p>' + rank + '</p><p>' + (nb ? 'New personal best.' : 'Best: ' + fmt(best) + ' m') + '</p></div>' +
+      '<button class="pill primary" id="dagain" style="align-self:center;padding:12px 18px;font-size:.9rem">Dive again</button>';
+    $('dagain').onclick = begin;
+  }
+  return {
+    enter() { intro(); }, leave() { clearInterval(timer); },
+    key() {},
+    summary() { return best ? 'Best ' + fmt(best) + ' m' : 'No dive yet'; }
+  };
+})();
+
+/* ============ ROUTER ============ */
+const games = { fivefold: Five, road: Road, dive: Dive };
+function route(name) {
+  const h = typeof name === 'string' ? name : location.hash.slice(1), next = games[h] ? h : 'home';
+  if (current !== next && games[current] && games[current].leave) games[current].leave();
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  current = next;
+  ['home', 'fivefold', 'road', 'dive'].forEach(id => $(id).hidden = id !== next);
+  if (next === 'home') {
+    $('homeFive').textContent = Five.summary(); $('homeRoad').textContent = Road.summary(); $('homeDive').textContent = Dive.summary();
+  } else games[next].enter();
+}
+window.addEventListener('hashchange', () => route());
+/* Navigate without relying on the URL hash, so it also works inside sandboxed previews */
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#"]'); if (!a) return;
+  e.preventDefault();
+  const n = a.getAttribute('href').slice(1);
+  try { history.replaceState(null, '', '#' + n); } catch (x) {}
+  route(n);
+});
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+  if (current === 'fivefold' || current === 'road') games[current].key(e);
+});
+document.addEventListener('keyup', e => { if (current === 'road') Road.keyup(e); });
+route();
+</script>
+
+</body></html>
